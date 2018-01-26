@@ -1,138 +1,245 @@
-<%@ page import="com.dtolabs.rundeck.server.authorization.AuthConstants" %>
-<script type="text/javascript">
-//<!--
-var menus = new MenuController();
-function loadProjectSelect(){
-    new Ajax.Updater('projectSelect','${createLink(controller:'framework',action:'projectSelect')}',{
-        evalScripts:true
-    });
-}
-function selectProject(value){
-    if(value=='-new-'){
-        doCreateProject();
-        return;
-    }
+<%@ page import="com.opensymphony.module.sitemesh.RequestConstants; com.dtolabs.rundeck.server.authorization.AuthConstants" %>
+<g:set var="selectParams" value="${[:]}"/>
+<g:if test="${pageScope._metaTabPage}">
+    <g:set var="selectParams" value="${[page: _metaTabPage,project:params.project?:request.project]}"/>
+</g:if>
+<nav class="navbar navbar-default navbar-static-top" role="navigation">
 
-    new Ajax.Request('${createLink(controller:'framework',action:'selectProject')}',{
-        evalScripts:true,
-        parameters:{project:value},
-        onSuccess:function(transport){
-            $('projectSelect').loading(value?value:'All projects...');
-            if(typeof(_menuDidSelectProject)=='function'){
-                if(_menuDidSelectProject(value)){
-                    loadProjectSelect();
-                }
-            }else{
-                oopsEmbeddedLogin();
-            }
-        }
-    });
-}
-function doCreateProject(){
-    document.location = "${createLink(controller:'framework',action:'createProject')}";
-}
-//-->
-</script>
-<div  class="topbar solo" >
-<g:if test="${session?.user && request.subject}">
-<!--<div class="secondbar">-->
+    <div class="navbar-header">
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+        </button>
+    <a href="${grailsApplication.config.rundeck.gui.titleLink ? enc(attr:grailsApplication.config.rundeck.gui.titleLink) : g.resource(dir: '/')}"
+       title="Home" class="navbar-brand">
+        <g:set var="appTitle"
+               value="${grailsApplication.config.rundeck?.gui?.title ?: g.message(code: 'main.app.name',default:'')}"/>
+        <g:set var="appDefaultTitle" value="${g.message(code: 'main.app.default.name',default:'')}"/>
+        <g:set var="brandHtml"
+               value="${grailsApplication.config.rundeck?.gui?.brand?.html ?: g.message(code: 'main.app.brand.html',default:'')}"/>
+        <g:set var="brandDefaultHtml"
+               value="${g.message(code: 'main.app.brand.default.html',default:'')}"/>
+        <i class="rdicon app-logo"></i>
+        <g:if test="${brandHtml}">
+            ${enc(sanitize:brandHtml)}
+        </g:if>
+        <g:elseif test="${appTitle}">
+            ${appTitle}
+        </g:elseif>
+        <g:elseif test="${brandDefaultHtml}">
+            ${enc(sanitize:brandDefaultHtml)}
+        </g:elseif>
+        <g:else>
+            ${appDefaultTitle}
+        </g:else>
+    </a>
+    </div>
 
-   <span id="top_tabs">
-
-        <g:set var="resselected" value=""/>
-        <g:ifPageProperty name='meta.tabpage' >
-        <g:ifPageProperty name='meta.tabpage' equals='nodes'>
-           <g:set var="resselected" value="selected"/>
+    <g:if test="${request.getAttribute(RequestConstants.PAGE)}">
+        <g:ifPageProperty name='meta.tabpage'>
+            <g:ifPageProperty name='meta.tabpage' equals='configure'>
+                <g:set var="cfgselected" value="active"/>
+            </g:ifPageProperty>
         </g:ifPageProperty>
+    </g:if>
+    <div class="container">
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+    <ul class="nav navbar-nav">
+<g:if test="${session?.user && request.subject }">
+    <g:set var="homeselected" value="${false}"/>
+    <g:if test="${request.getAttribute(RequestConstants.PAGE)}">
+    <g:ifPageProperty name='meta.tabpage'>
+        <g:ifPageProperty name='meta.tabpage' equals='home'>
+            <g:set var="homeselected" value="${true}"/>
         </g:ifPageProperty>
-        <g:link controller="framework" action="nodes" class=" toptab ${resselected}"  style="height:29px">
-           <g:message code="gui.menu.Run"/>
-        </g:link>
+    </g:ifPageProperty>
+    </g:if>
+    <g:if test="${! homeselected}">
+
+    <g:if test="${params.project ?: request.project || session?.projects}">
+        <g:if test="${session.frameworkProjects}">
+            <li class="dropdown" id="projectSelect">
+                <g:render template="/framework/projectSelect"
+                          model="${[projects: session.frameworkProjects, project: params.project ?: request.project, selectParams: selectParams]}"/>
+            </li>
+        </g:if>
+        <g:else>
+            <li id="projectSelect" class="dropdown disabled">
+                <a data-toggle="dropdown" href="#" class="disabled">
+                    <i class="glyphicon glyphicon-tasks"></i>
+                    <g:enc>${ params.project ?: request.project}</g:enc>
+                    <i class="caret"></i>
+                </a>
+            </li>
+        </g:else>
+    </g:if>
+
+        <g:set var="selectedclass" value="active"/>
 
         <g:set var="wfselected" value=""/>
+        <g:if test="${request.getAttribute(RequestConstants.PAGE)}">
         <g:ifPageProperty name='meta.tabpage' >
         <g:ifPageProperty name='meta.tabpage' equals='jobs'>
-           <g:set var="wfselected" value="selected"/>
+           <g:set var="wfselected" value="${selectedclass}"/>
         </g:ifPageProperty>
         </g:ifPageProperty>
-        <g:link controller="menu" action="jobs" class=" toptab ${wfselected}" style="height:29px">
-           <g:message code="gui.menu.Workflows"/>
-        </g:link>
-
+        <g:set var="resselected" value=""/>
+        <g:ifPageProperty name='meta.tabpage'>
+            <g:ifPageProperty name='meta.tabpage' equals='nodes'>
+                <g:set var="resselected" value="${selectedclass}"/>
+            </g:ifPageProperty>
+        </g:ifPageProperty>
+        <g:set var="adhocselected" value=""/>
+        <g:ifPageProperty name='meta.tabpage'>
+            <g:ifPageProperty name='meta.tabpage' equals='adhoc'>
+                <g:set var="adhocselected" value="${selectedclass}"/>
+            </g:ifPageProperty>
+        </g:ifPageProperty>
         <g:set var="eventsselected" value=""/>
-        <g:ifPageProperty name='meta.tabpage' >
-        <g:ifPageProperty name='meta.tabpage' equals='events'>
-            <g:set var="eventsselected" value="selected"/>
+        <g:ifPageProperty name='meta.tabpage'>
+            <g:ifPageProperty name='meta.tabpage' equals='events'>
+                <g:set var="eventsselected" value="${selectedclass}"/>
+            </g:ifPageProperty>
         </g:ifPageProperty>
-        </g:ifPageProperty>
-        <g:link controller="reports"  action="index" class=" toptab ${eventsselected}"  style="height:29px">
+        </g:if>
+        <g:if test="${params.project?:request.project}">
+        <li class="${enc(attr:wfselected)}"><g:link controller="menu" action="jobs" class=" toptab ${enc(attr: wfselected)}"
+                                          params="[project: params.project ?: request.project]">
+           <g:message code="gui.menu.Workflows"/>
+        </g:link></li><!--
+        --><li class="${enc(attr:resselected)}"><g:link controller="framework" action="nodes" class=" toptab ${enc(attr: resselected)}"
+                                              params="[project: params.project ?: request.project]" >
+           <g:message code="gui.menu.Nodes"/>
+       </g:link></li><!--
+        --><g:if
+                test="${auth.adhocAllowedTest(action:AuthConstants.ACTION_RUN,project: params.project?:request.project)}"><li
+                    class="${enc(attr:adhocselected)}"><g:link
+                controller="framework" action="adhoc"
+                                                  class=" toptab ${enc(attr:adhocselected)}"
+                                                params="[project: params.project ?: request.project]">
+           <g:message code="gui.menu.Adhoc"/>
+       </g:link></li></g:if><!--
+        --><li class="${enc(attr:eventsselected)}"><g:link controller="reports"  action="index" class=" toptab ${enc(attr:eventsselected)}"
+                                                 params="[project: params.project ?: request.project]" >
             <g:message code="gui.menu.Events"/>
-        </g:link>
+        </g:link></li>
+        </g:if>
 
-    <g:if test="${session?.project||session?.projects}">
-       <span class="projects" style="font-size:9pt; line-height: 12px; margin-left:20px;">
-            <img src="${resource(dir:'images',file:'icon-tiny-rarrow-sep.png')}" alt="project: " width="7px" height="12px"/>
-            <span id="projectSelect">
-               <span class="action textbtn" onclick="loadProjectSelect();" title="Select project...">${session?.project?session.project:'Select project&hellip;'}</span>
-            </span>
-       </span>
+    <g:unless test="${session.frameworkProjects}">
+        <g:javascript>
+            jQuery(function(){
+                jQuery('#projectSelect').load('${enc(js:createLink(controller: 'framework', action: 'projectSelect', params: selectParams))}',{},function(x,r){
+                    jQuery('#projectSelect').removeClass('disabled');
+                });
+            });
+        </g:javascript>
+    </g:unless>
     </g:if>
-
-</span>
 </g:if>
-    <a href="${grailsApplication.config.rundeck.gui.titleLink?grailsApplication.config.rundeck.gui.titleLink:g.resource(dir:'/')}"
-        title="Home" class="home" style="height:29px;">
-        <g:set var="appTitle" value="${grailsApplication.config.rundeck.gui.title?grailsApplication.config.rundeck.gui.title:g.message(code:'main.app.name')}"/>
-        <g:set var="appLogo" value="${grailsApplication.config.rundeck.gui.logo?grailsApplication.config.rundeck.gui.logo:g.message(code:'main.app.logo')}"/>
-        <g:set var="appLogoW" value="${grailsApplication.config.rundeck.gui.'logo-width'?grailsApplication.config.rundeck.gui.'logo-width':g.message(code:'main.app.logo.width')}"/>
-        <g:set var="appLogoH" value="${grailsApplication.config.rundeck.gui.'logo-height'?grailsApplication.config.rundeck.gui.'logo-height':g.message(code:'main.app.logo.height')}"/>
-        <img src="${resource(dir:'images',file:appLogo)}" alt="${appTitle}" width="${appLogoW}" height="${appLogoH}"/>
-        ${appTitle}
-    </a>
-
-<!--</div>-->
-    %{--<g:if test="${session?.project}">
-        <img src="${resource(dir:'images',file:'icon-tiny-rarrow-sep.png')}" alt="project: " width="7px" height="12px"/>
-        <span class="projectinfo">
-            <g:link controller="framework" action="showFrameworkProject" params="[project:session.project]" title="Select a project">${session.project}</g:link>
-        </span>
-    </g:if>--}%
+</ul>
+<g:if test="${session?.user && request.subject }">
+<g:ifExecutionMode passive="true">
+    <p class="navbar-text has_tooltip navbar-text-warning"
+       title="${g.message(code:'system.executionMode.description.passive')}"
+       data-toggle="tooltip"
+       data-placement="bottom"
+    >
+        <i class="glyphicon glyphicon-exclamation-sign"></i>
+        <g:message code="passive.mode" />
+    </p>
+    <auth:resourceAllowed action="${[AuthConstants.ACTION_ENABLE_EXECUTIONS,AuthConstants.ACTION_ADMIN]}" any="true" context="application" kind="system">
+    <g:form class="navbar-form navbar-left" controller="execution" action="executionMode" method="POST" useToken="true">
+        <g:hiddenField name="mode" value="active"/>
+        <g:hiddenField name="project" value="${params.project}"/>
+        <g:link action="executionMode"
+                controller="menu"
+                class="btn btn-default "
+                title="${message(code:"action.executionMode.set.active.help")}"
+        >
+            Change
+        </g:link>
+    </g:form>
+    </auth:resourceAllowed>
+</g:ifExecutionMode>
+</g:if>
+  <ul class="nav navbar-nav navbar-right">
+      <g:ifServletContextAttributeExists attribute="CLUSTER_MODE_ENABLED">
+          <g:ifServletContextAttribute attribute="CLUSTER_MODE_ENABLED" value="true">
+              <g:if test="${grailsApplication.config.rundeck?.gui?.clusterIdentityInHeader in [true,'true']}">
+                  <li>
+                      <span class="navbar-text rundeck-server-uuid"
+                            data-server-uuid="${ servletContextAttribute(attribute: 'SERVER_UUID')}"
+                            data-server-name="${ servletContextAttribute(attribute: 'FRAMEWORK_NODE')}"
+                      >
+                      </span>
+                  </li>
+              </g:if>
+          </g:ifServletContextAttribute>
+      </g:ifServletContextAttributeExists>
+    <g:set var="helpLinkUrl" value="${g.helpLinkUrl()}"/>
     <g:if test="${session?.user && request.subject}">
-        <span class="headright">
-            <g:set var="adminauth" value="${false}"/>
-            <g:if test="${session.project}">
-            <g:set var="adminauth" value="${auth.resourceAllowedTest(type:'project',name:session.project,action:[AuthConstants.ACTION_ADMIN,AuthConstants.ACTION_READ],context:'application')}"/>
-            <g:if test="${adminauth}">
-                <g:link controller="menu" action="admin"><img src="${resource(dir:'images',file:'icon-small-admin.png')}" width="16px" height="16px" alt=""/>
-                    Admin</g:link>
-            </g:if>
-            </g:if>
-            <span class="logininfo">
-                <g:if test="${adminauth}">
-                    <img src="${resource(dir:'images',file:'icon-small-user-admin.png')}" width="16px" height="16px" alt=""/>
-                </g:if>
-                <g:else>
-                    <img src="${resource(dir:'images',file:'icon-small-user.png')}" width="16px" height="16px" alt=""/>
-                </g:else>
-                <span class="userName" title="User ${session.user} is currently logged in.">
-                    <g:link controller="user" action="profile">${session.user}</g:link>
-                </span> &raquo;
-                <g:link action="logout" controller="user" title="Logout user: ${session.user}" params="${[refLink:controllerName&&actionName?createLink(controller:controllerName,action:actionName,params:params,absolute:true):'']}">logout</g:link>
-            </span>
-            <a href="${org.codehaus.groovy.grails.commons.ConfigurationHolder.config.rundeck?.gui?.helpLink ? org.codehaus.groovy.grails.commons.ConfigurationHolder.config.rundeck?.gui?.helpLink : resource(dir:'docs')}" class="help">
-                help
-                <img src="${resource(dir:'images',file:'icon-small-help.png')}" width="16px" height="16px" alt=""/>
+        <li class="headright">
+            <g:set var="projConfigAuth" value="${false}"/>
+            <g:if test="${params.project ?: request.project}">
+            <g:set var="projConfigAuth" value="${auth.resourceAllowedTest(type:'project',name: (params.project ?: request.project),
+                    action: [AuthConstants.ACTION_CONFIGURE, AuthConstants.ACTION_ADMIN, AuthConstants.ACTION_IMPORT,
+                            AuthConstants.ACTION_EXPORT, AuthConstants.ACTION_DELETE],any:true,context:'application')}"/>
+
+            <g:if test="${projConfigAuth}">
+            <li class="${cfgselected ?: ''}">
+                <g:link controller="menu" action="admin" title="${g.message(code:'gui.menu.Admin')}"
+                        params="[project: params.project?:request.project]">
+                    <i class="glyphicon glyphicon-cog"></i>
+                </g:link>
+            </li>
+                <!-- --></g:if><!--
+        --></g:if><g:elseif
+            test="${auth.resourceAllowedTest(type: 'resource', kind: 'system',
+                    action: [AuthConstants.ACTION_READ, AuthConstants.ACTION_ADMIN], any: true, context: 'application')}">
+
+        <li class="${cfgselected ?: ''}">
+        %{--Generic config page no project selected--}%
+            <g:link controller="menu" action="systemConfig" title="${g.message(code: 'gui.menu.Admin')}">
+                <i class="glyphicon glyphicon-cog"></i>
+            </g:link>
+        </li>
+    </g:elseif><!--
+            -->
+        <li class="dropdown">
+            <g:link controller="user" action="profile" class="dropdown-toggle" data-toggle="dropdown" data-target="#" id="userLabel"
+                    role="button">
+                <g:enc>${session.user}</g:enc> <span class="caret"></span>
+            </g:link>
+            <ul class="dropdown-menu" role="menu" aria-labelledby="userLabel">
+                <li><g:link controller="user" action="profile">
+                        <i class="glyphicon glyphicon-user"></i>
+                        Profile
+                    </g:link>
+                </li>
+                <li class="divider"></li>
+                <li><g:link action="logout" controller="user" title="Logout user: ${enc(attr:session.user)}">
+                    <i class="glyphicon glyphicon-remove"></i>
+                    Logout
+                </g:link>
+                </li>
+            </ul>
+        </li>
+        <li>
+            <a href="${enc(attr:helpLinkUrl)}" class="help ">
+                help <b class="glyphicon glyphicon-question-sign"></b>
             </a>
-        </span>
+        </li>
     </g:if>
     <g:else>
-        <span class="headright">
-            <a href="${org.codehaus.groovy.grails.commons.ConfigurationHolder.config.rundeck?.gui?.helpLink ? org.codehaus.groovy.grails.commons.ConfigurationHolder.config.rundeck?.gui?.helpLink : resource(dir: 'docs')}" class="help">
-                help
-                <img src="${resource(dir:'images',file:'icon-small-help.png')}" width="16px" height="16px" alt=""/>
+        <li >
+            <a href="${enc(attr:helpLinkUrl)}" class="help ">
+                help <b class="glyphicon glyphicon-question-sign"></b>
             </a>
-        </span>
+        </li>
     </g:else>
-</div>
-
-
+    </ul>
+    </div>
+    </div>
+</nav>

@@ -35,11 +35,11 @@ import java.util.zip.ZipInputStream;
  *
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  */
-class ScriptPluginScanner extends DirPluginScanner {
+public class ScriptPluginScanner extends DirPluginScanner {
     private static final Logger log = Logger.getLogger(ScriptPluginScanner.class.getName());
     public static final FileFilter FILENAME_FILTER = new FileFilter() {
         public boolean accept(final File file) {
-            return file.isFile() && file.getName().endsWith("-plugin.zip");
+            return file.isFile() && file.getName().endsWith(".zip");
         }
     };
 
@@ -76,7 +76,7 @@ class ScriptPluginScanner extends DirPluginScanner {
                 valid = ScriptPluginProviderLoader.validatePluginMeta(metadata, file);
             }
             if (!valid) {
-                log.warn("Skipping plugin file: metadata was invalid: " + file.getAbsolutePath());
+                log.error("Skipping plugin file: metadata was invalid: " + file.getAbsolutePath());
             }
             return valid;
         } catch (IOException e) {

@@ -23,10 +23,12 @@
 */
 package com.dtolabs.rundeck.core.cli.jobs;
 
+import com.dtolabs.client.services.DispatcherConfig;
 import com.dtolabs.rundeck.core.Constants;
 import com.dtolabs.rundeck.core.cli.*;
-import com.dtolabs.rundeck.core.common.Framework;
+import com.dtolabs.rundeck.core.common.FrameworkFactory;
 import com.dtolabs.rundeck.core.dispatcher.*;
+import com.dtolabs.rundeck.core.utils.IPropertyLookup;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 import org.apache.commons.cli.Options;
@@ -35,6 +37,7 @@ import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.*;
@@ -42,7 +45,8 @@ import java.util.*;
 /**
  * JobsTool commandline tool (rd-jobs), which provides actions for listing stored jobs from the server, and loading XML
  * definitions to the server. Server communication happens through the {@link com.dtolabs.rundeck.core.dispatcher.CentralDispatcher}
- * server layer. </p> <p> 'list' action: list stored
+ * server layer.
+ * <p> 'list' action: list stored
  * jobs matching query input, or all jobs if no query options are provided.  Optionally write the XML content to a file
  * indicated with the -f/--file option. </p> <p> 'load' action: load XML content from a file indicated with -f/--file
  * option to the server, listing the server's response about success/failure/skipped status for each Job defined.
@@ -70,6 +74,7 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
      */
     public static final String ACTION_PURGE = "purge";
     private StoredJobsRequestDuplicateOption duplicateOption = StoredJobsRequestDuplicateOption.update;
+    private boolean uuidOptionRemove;
 
     /**
      * Get action
@@ -164,6 +169,14 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
         return duplicateOption;
     }
 
+    public String getProject() {
+        return getArgProject();
+    }
+
+    public StoredJobsRequestUUIDOption getUUIDOption() {
+        return uuidOptionRemove ? StoredJobsRequestUUIDOption.remove : StoredJobsRequestUUIDOption.preserve;
+    }
+
     /**
      * Return group option value
      *
@@ -229,11 +242,11 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
         /**
          * load action
          */
-        load(ACTION_PURGE),
+        load(ACTION_LOAD),
         /**
          * load action
          */
-        purge(ACTION_LOAD);
+        purge(ACTION_PURGE);
         private String name;
 
         Actions(final String name) {
@@ -330,6 +343,15 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
     public static final String DUPLICATE_OPTION_LONG = "duplicate";
 
     /**
+     * long option to remove UUIDs when importing jobs
+     */
+    public static final String REMOVE_UUID_OPTION_SHORT = "r";
+    /**
+     * long option to remove UUIDs when importing jobs
+     */
+    public static final String REMOVE_UUID_OPTION_LONG = "remove-uuids";
+
+    /**
      * short option string for load option: format
      */
     public static final String FORMAT_OPTION = "F";
@@ -341,12 +363,6 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
 
 
     /**
-     * Reference to the Framework instance
-     */
-    private final Framework framework;
-    SingleProjectResolver internalResolver;
-
-    /**
      * Creates an instance and executes {@link #run(String[])}.
      *
      * @param args command line arg vector
@@ -354,9 +370,8 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
      * @throws Exception action error
      */
     public static void main(final String[] args) throws Exception {
-        PropertyConfigurator.configure(new File(Constants.getFrameworkConfigFile(),
-            "log4j.properties").getAbsolutePath());
-        final JobsTool tool = new JobsTool(new DefaultCLIToolLogger());
+        PropertyConfigurator.configure(Constants.getLog4jPropertiesFile().getAbsolutePath());
+        final JobsTool tool = new JobsTool(createDefaultDispatcherConfig(),new DefaultCLIToolLogger());
         tool.setShouldExit(true);
         int exitCode = 1; //pessimistic initial value
 
@@ -377,10 +392,13 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
     }
 
     /**
-     * Create QueueTool with default Framework instances located by the system rdeck.base property.
+     * Create QueueTool with default framework properties located by the system rdeck.base property.
      */
     public JobsTool() {
-        this(Framework.getInstance(Constants.getSystemBaseDir()), new Log4JCLIToolLogger(log4j));
+        this(
+                FrameworkFactory.createFilesystemFramework(new File(Constants.getSystemBaseDir())).getPropertyLookup(),
+                new Log4JCLIToolLogger(log4j)
+        );
     }
 
     protected boolean isUseHelpOption() {
@@ -393,27 +411,38 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
      * @param logger the logger
      */
     public JobsTool(final CLIToolLogger logger) {
-        this(Framework.getInstance(Constants.getSystemBaseDir()), logger);
+        this(
+                FrameworkFactory.createFilesystemFramework(new File(Constants.getSystemBaseDir())).getPropertyLookup(),
+                logger
+        );
     }
 
     /**
      * Create QueueTool specifying the framework
      *
-     * @param framework framework
+     * @param frameworkProperties framework properties
      */
-    public JobsTool(final Framework framework) {
-        this(framework, null);
+    public JobsTool(final IPropertyLookup frameworkProperties) {
+        this(frameworkProperties, null);
     }
 
     /**
      * Create QueueTool with the framework.
      *
-     * @param framework the framework
+     * @param frameworkProperties framework properties
      * @param logger    the logger
      */
-    public JobsTool(final Framework framework, final CLIToolLogger logger) {
-        this.framework = framework;
-        internalResolver = new FrameworkSingleProjectResolver(framework);
+    public JobsTool(final IPropertyLookup frameworkProperties, final CLIToolLogger logger) {
+        this(FrameworkFactory.createDispatcherConfig(frameworkProperties), logger);
+    }
+    /**
+     * Create QueueTool with the framework.
+     *
+     * @param config API dispatcher configuration
+     * @param logger    the logger
+     */
+    public JobsTool(final DispatcherConfig config, final CLIToolLogger logger) {
+        setCentralDispatcher(FrameworkFactory.createDispatcher(config));
         this.clilogger = logger;
         if (null == clilogger) {
             clilogger = new Log4JCLIToolLogger(log4j);
@@ -435,6 +464,8 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
             options.addOption(VERBOSE_OPTION, VERBOSE_OPTION_LONG, false, "Enable verbose output");
             options.addOption(FORMAT_OPTION, FORMAT_OPTION_LONG, true,
                 "Format for input/output file. One of: " + Arrays.toString(JobDefinitionFileFormat.values()));
+            options.addOption(PROJECT_OPTION, PROJECT_OPTION_LONG, true,
+                    "Project name. List jobs within this project, or import jobs to this project.");
         }
 
         public void parseArgs(final CommandLine cli, final String[] original) throws CLIToolOptionsException {
@@ -463,6 +494,8 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
         public void addOptions(final Options options) {
             options.addOption(DUPLICATE_OPTION, DUPLICATE_OPTION_LONG, true,
                 "Duplicate job behavior option. When loading jobs, treat definitions that already exist on the server in the given manner: 'update' existing jobs,'skip' the uploaded definitions, or 'create' them anyway. (load action. default: update)");
+            options.addOption(REMOVE_UUID_OPTION_SHORT, REMOVE_UUID_OPTION_LONG, false,
+                "When loading jobs, remove any UUIDs while importing. (load action. default: false)");
         }
 
         public void parseArgs(final CommandLine cli, final String[] original) throws CLIToolOptionsException {
@@ -476,6 +509,7 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
                         + Arrays.toString(StoredJobsRequestDuplicateOption.values()));
                 }
             }
+            uuidOptionRemove = cli.hasOption(REMOVE_UUID_OPTION_SHORT);
         }
 
         public void validate(final CommandLine cli, final String[] original) throws CLIToolOptionsException {
@@ -490,10 +524,6 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
                 }
                 if (null != argIdlist) {
                     warn("load action: -" + IDLIST_OPTION + "/--" + IDLIST_OPTION_LONG
-                         + " option only valid with list action");
-                }
-                if (null != argProject) {
-                    warn("load action: -" + PROJECT_OPTION + "/--" + PROJECT_OPTION_LONG
                          + " option only valid with list action");
                 }
                 if (null == argFile) {
@@ -522,8 +552,6 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
                 "Group name. List jobs within this group or sub-group (list/purge action)");
             options.addOption(IDLIST_OPTION, IDLIST_OPTION_LONG, true,
                 "Job ID List. List Jobs with these IDs explicitly. Comma-separated, e.g.: 1,2,3. (list/purge action)");
-            options.addOption(PROJECT_OPTION, PROJECT_OPTION_LONG, true,
-                "Project name. List jobs within this project. (list/purge action)");
 
         }
 
@@ -545,8 +573,14 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
         public void validate(final CommandLine cli, final String[] original) throws CLIToolOptionsException {
             if (Actions.list == action) {
                 if(null==argProject){
-                    if(internalResolver.hasSingleProject()) {
-                        argProject = internalResolver.getSingleProjectName();
+                    try {
+                        argProject = getSingleProjectName();
+                    } catch (CentralDispatcherException e) {
+
+                        throw new CLIToolOptionsException(
+                                ACTION_LIST + " could not determine project to use: "+e.getMessage(),e);
+                    }
+                    if(null!=argProject) {
                         debug("# No project specified, defaulting to: " + argProject);
                     }else {
                         throw new CLIToolOptionsException(
@@ -556,6 +590,14 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
                 }
             }
         }
+    }
+
+    private String getSingleProjectName() throws CentralDispatcherException {
+        List<String> strings = getCentralDispatcher().listProjectNames();
+        if(strings!=null && strings.size()==1) {
+            return strings.get(0);
+        }
+        return null;
     }
 
     /**
@@ -572,8 +614,13 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
         public void validate(final CommandLine cli, final String[] original) throws CLIToolOptionsException {
             if (Actions.purge == action) {
                 if(null==argProject){
-                    if(internalResolver.hasSingleProject()) {
-                        argProject = internalResolver.getSingleProjectName();
+                    try {
+                        argProject = getSingleProjectName();
+                    } catch (CentralDispatcherException e) {
+                        throw new CLIToolOptionsException(
+                                ACTION_PURGE + " could not determine project to use: "+e.getMessage(),e);
+                    }
+                    if(null!=argProject) {
                         debug("# No project specified, defaulting to: " + argProject);
                     }else {
                         throw new CLIToolOptionsException(
@@ -644,7 +691,8 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
                + "rd-jobs purge -p <project> [query options] : Delete jobs from the project matching the options\n"
                + "rd-jobs purge -p <project> --file <file> [query options] : Delete jobs from the project matching the options, after saving them to a file\n"
                + "\tLoad action:\n"
-               + "rd-jobs load --file <file> : load jobs stored in XML file\n"
+               + "rd-jobs load --file <file> : load jobs stored in XML file, require each to define its project\n"
+               + "rd-jobs load -p <project> --file <file> : load jobs stored in XML file to specific project\n"
                + "rd-jobs load --file <file> -F yaml : load jobs stored in YAML file";
     }
 
@@ -656,7 +704,7 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
     private void loadAction() throws JobsToolException {
         final Collection<IStoredJobLoadResult> result;
         try {
-            result = framework.getCentralDispatcherMgr().loadJobs(this, argFile,format);
+            result = getCentralDispatcher().loadJobs(this, argFile,format);
         } catch (CentralDispatcherException e) {
             final String msg = "Failed request to load jobs: " + e.getMessage();
             throw new JobsToolException(msg, e);
@@ -720,7 +768,7 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
             final FileOutputStream output = null != argFile ? new FileOutputStream(
                 argFile) : null;
             try {
-                result = framework.getCentralDispatcherMgr().listStoredJobs(this, output, format);
+                result = getCentralDispatcher().listStoredJobs(this, output, format);
             } finally {
                 if(null!=output){
                     output.close();
@@ -754,38 +802,53 @@ public class JobsTool extends BaseTool implements IStoredJobsQuery, ILoadJobsReq
     private void purgeAction() throws JobsToolException {
         final Collection<IStoredJob> result;
         final Collection<DeleteJobResult> deleteresult;
+        final FileOutputStream output;
         try {
-            final FileOutputStream output = null != argFile ? new FileOutputStream(
-                argFile) : null;
+            output = null != argFile ? new FileOutputStream(
+                    argFile) : null;
+        } catch (FileNotFoundException e) {
+            final String msg = "Failed to open output file for writing: " + argFile + ": " + e.getMessage();
+            throw new JobsToolException(msg, e);
+        }
+        try {
             try {
-                result = framework.getCentralDispatcherMgr().listStoredJobs(this, output, format);
+                result = getCentralDispatcher().listStoredJobs(this, output, format);
             } finally {
                 if (null != output) {
                     output.close();
                 }
             }
-            if (null != argFile) {
-                log("Wrote " + format + " to file: " + argFile.getAbsolutePath());
-            }
-            ArrayList<String> jobIds = new ArrayList<String>();
-            for (final IStoredJob job : result) {
-                jobIds.add(job.getJobId());
-            }
-            if(jobIds.size()==0){
-                log("# Found 0 matching jobs");
-                return;
-            }
-            if (argVerbose) {
-                log("# Deleting " + result.size() + " jobs...");
-            }
-            deleteresult = framework.getCentralDispatcherMgr().deleteStoredJobs(jobIds);
+
         } catch (CentralDispatcherException e) {
-            final String msg = "Failed request to list the queue: " + e.getMessage();
+            final String msg = "Failed request to list stored jobs: " + e.getMessage();
             throw new JobsToolException(msg, e);
         } catch (IOException e) {
-            final String msg = "Failed request to list the queue: " + e.getMessage();
+            final String msg = "Failed to close output file: " + argFile + ": " + e.getMessage();
             throw new JobsToolException(msg, e);
         }
+        if (null != argFile) {
+            log("Wrote " + format + " to file: " + argFile.getAbsolutePath());
+        }
+
+        ArrayList<String> jobIds = new ArrayList<String>();
+        for (final IStoredJob job : result) {
+            jobIds.add(job.getJobId());
+        }
+        if (jobIds.size() == 0) {
+            log("# Found 0 matching jobs");
+            return;
+        }
+        if (argVerbose) {
+            log("# Deleting " + result.size() + " jobs...");
+        }
+
+        try{
+            deleteresult = getCentralDispatcher().deleteStoredJobs(jobIds);
+        } catch (CentralDispatcherException e) {
+            final String msg = "Failed request to delete jobs: " + e.getMessage();
+            throw new JobsToolException(msg, e);
+        }
+        
         List<DeleteJobResult> successful = new ArrayList<DeleteJobResult>();
         List<DeleteJobResult> failed = new ArrayList<DeleteJobResult>();
         for (final DeleteJobResult jobResult : deleteresult) {

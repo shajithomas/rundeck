@@ -113,6 +113,12 @@ abstract class HttpClientChannel implements BaseHttpClient {
         logger.debug("creating connection object to URL: " + requestUrl);
 
         httpc = new HttpClient();
+        if (null != System.getProperty("http.proxyPort") && null != System.getProperty("http.proxyHost")) {
+            Integer port = Integer.getInteger("http.proxyPort");
+            if (null != port) {
+                httpc.getHostConfiguration().setProxy(System.getProperty("http.proxyHost"), port);
+            }
+        }
     }
 
     private static final HashSet validMethodTypes= new HashSet();
@@ -217,8 +223,7 @@ abstract class HttpClientChannel implements BaseHttpClient {
     protected abstract NameValuePair[] getRequestBody(PostMethod method);
 
     /**
-     * Return true if the request method is POST.
-     * @return
+     * @return true if the request method is POST.
      */
     protected abstract boolean isPostMethod();
 
@@ -245,19 +250,16 @@ abstract class HttpClientChannel implements BaseHttpClient {
     }
 
     /**
-     * Return true if initial result of request indicates that authentication needs to be performed again.
-     * @param resultCode
-     * @param method
-     * @return
+     * @return true if initial result of request indicates that authentication needs to be performed again.
+     * @param resultCode status code
+     * @param method method
      */
     protected boolean needsReAuthentication(int resultCode, HttpMethod method){
         return false;
     }
 
     /**
-     * Gets the HttpClient used in the request making.
-     *
-     * @return
+     * @return Gets the HttpClient used in the request making.
      */
     HttpClient getHttpClient() {
         return httpc;
@@ -267,11 +269,9 @@ abstract class HttpClientChannel implements BaseHttpClient {
         return reqMadeMethod;
     }
     /**
-     * Gets headers from the response.
+     * @return Gets headers from the response.
      *
-     * @param name
-     *
-     * @return
+     * @param name header name
      */
     public Header getResponseHeader(String name) {
         return reqMadeMethod.getResponseHeader(name);
@@ -428,16 +428,14 @@ abstract class HttpClientChannel implements BaseHttpClient {
     }
 
     /**
-     * Get the HTTP response code.
-     * @return
+     * @return Get the HTTP response code.
      */
-    int getResultCode() {
+    public int getResultCode() {
         return resultCode;
     }
 
     /**
-     * Get the URL used for the request.
-     * @return
+     * @return Get the URL used for the request.
      */
     URL getRequestURL() {
         return requestURL;

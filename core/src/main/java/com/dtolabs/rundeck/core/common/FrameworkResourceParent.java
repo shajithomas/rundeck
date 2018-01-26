@@ -29,7 +29,7 @@ import java.util.Map;
 
 /**
  * Provides capability of managing child {@link FrameworkResource} instances.
- * <p/>
+ * <br>
  */
 public abstract class FrameworkResourceParent extends FrameworkResource implements IFrameworkResourceParent {
     /**
@@ -37,6 +37,7 @@ public abstract class FrameworkResourceParent extends FrameworkResource implemen
      *
      * @param name Name of resource
      * @param dir  Base directory of resource
+     * @param parent parent
      */
     public FrameworkResourceParent(final String name, final File dir, final IFrameworkResourceParent parent) {
         super(name, dir, parent);
@@ -47,6 +48,10 @@ public abstract class FrameworkResourceParent extends FrameworkResource implemen
      * create a new child resource
      */
     public IFrameworkResource createChild(final String name) {
+        if(!name.matches(VALID_RESOURCE_NAME_REGEX)) {
+            throw new IllegalArgumentException("Child resource name \"" + name + "\" does not match: " +
+                    VALID_RESOURCE_NAME_REGEX);
+        }
         FrameworkResource resource = new FrameworkResource(name, new File(getBaseDir(), name), this);
         if(!resource.getBaseDir().mkdirs()) {
             logger.warn("Unable to create basedir for resource: " + resource.getBaseDir());
@@ -57,8 +62,6 @@ public abstract class FrameworkResourceParent extends FrameworkResource implemen
     /**
      * Gets requested child FrameworkResource. Throws a {@link FrameworkResourceException} if not found.
      *
-     * @param name
-     * @return
      */
     public IFrameworkResource getChild(final String name) {
         if(childCouldBeLoaded(name)) {
@@ -98,8 +101,6 @@ public abstract class FrameworkResourceParent extends FrameworkResource implemen
     /**
      * Checks if there is a child FrameworkResource with specified name.
      *
-     * @param name
-     * @return
      */
     public boolean existsChild(final String name) {
         if (null == name) {
@@ -111,14 +112,13 @@ public abstract class FrameworkResourceParent extends FrameworkResource implemen
     /**
      * Returns a collection of {@link FrameworkResource} child resources.
      *
-     * @return
      */
     public Collection listChildren() {
         return getChildren().values();
     }
 
     /**
-     * Remove the {@link FrameworkResourceInstance} by its name.
+     * Remove the resource by its name.
      *
      * @param name          Name of object
      */
@@ -140,10 +140,9 @@ public abstract class FrameworkResourceParent extends FrameworkResource implemen
 
     /**
      * Default implementation lists the subdirectory names and adds any existing child names
-     * @return
      */
-    public Collection listChildNames() {
-        HashSet childnames = new HashSet();
+    public Collection<String> listChildNames() {
+        HashSet<String> childnames = new HashSet<>();
         FilenameFilter filter = new FilenameFilter() {
             public boolean accept(File dir, String name) {
                 return name.matches(VALID_RESOURCE_NAME_REGEX);
@@ -151,10 +150,10 @@ public abstract class FrameworkResourceParent extends FrameworkResource implemen
         };
         final String[] list = getBaseDir().list(filter);
         if(null!=list){
-            for (int i = 0; i < list.length; i++) {
+            for (final String aList : list) {
                 //
                 // add new child
-                final File projectDir = new File(getBaseDir(), list[i]);
+                final File projectDir = new File(getBaseDir(), aList);
                 final String resName = projectDir.getName();
                 if (childCouldBeLoaded(resName)) {
                     childnames.add(resName);
@@ -169,8 +168,6 @@ public abstract class FrameworkResourceParent extends FrameworkResource implemen
      * Default implementation checks whether a subdir under the basedir exists with the specified name.
      * (Calls {@link #existsChildResourceDirectory(String)})
      * Should be overridden by subtypes if this is not the desired behavior.
-     * @param name
-     * @return
      */
     public boolean childCouldBeLoaded(String name) {
         return existsChildResourceDirectory(name);

@@ -26,10 +26,11 @@ import java.util.Properties;
 /**
  * Represents a generic framework resource. Each resoure has a name, a
  * base directory and a set of properties.
- * <p/>
+ * <br>
  */
 public class FrameworkResource implements IFrameworkResource {
-    public static final String VALID_RESOURCE_NAME_REGEX = "^[-\\._a-zA-Z0-9+]+$";
+    public static final String VALID_RESOURCE_NAME_CHARSET_REGEX = "[-_a-zA-Z0-9+][-\\._a-zA-Z0-9+]*";
+    public static final String VALID_RESOURCE_NAME_REGEX = "^"+VALID_RESOURCE_NAME_CHARSET_REGEX+"$";
 
     final Logger logger;
 
@@ -62,9 +63,8 @@ public class FrameworkResource implements IFrameworkResource {
 
 
     /**
-     * getter to name property
+     * @return name property
      *
-     * @return
      */
     public String getName() {
         return name;
@@ -76,9 +76,7 @@ public class FrameworkResource implements IFrameworkResource {
     private final File baseDir;
 
     /**
-     * getter to baseDir
-     *
-     * @return
+     * @return baseDir
      */
     public File getBaseDir() {
         return baseDir;
@@ -96,11 +94,6 @@ public class FrameworkResource implements IFrameworkResource {
     }
 
 
-    /**
-     * basic to string
-     *
-     * @return
-     */
     public String toString() {
         return name;
     }

@@ -35,6 +35,7 @@ import java.util.Map;
  *
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  * @version $Revision$
+ * @deprecated
  */
 public class FormattedOutputStream extends FilterOutputStream {
     Reformatter reformatter;
@@ -72,8 +73,8 @@ public class FormattedOutputStream extends FilterOutputStream {
     /**
      * Overrides the FilterOutputStream method to buffer the data.  When a newline is
      * encountered the buffered data is reformatted and written to the underlying output stream.
-     * @param b
-     * @throws IOException
+     * @param b char
+     * @throws IOException on io error
      */
     public void write(final int b) throws IOException {
         if (b == '\n') {
@@ -106,8 +107,7 @@ public class FormattedOutputStream extends FilterOutputStream {
     }
 
     /**
-     * Return the context map
-     * @return
+     * @return the context map
      */
     public Map<String, String> getContext() {
         return context;
@@ -115,8 +115,8 @@ public class FormattedOutputStream extends FilterOutputStream {
 
     /**
      * Set a context data value to be used by the Reformatter
-     * @param key
-     * @param value
+     * @param key data key
+     * @param value data value
      */
     public void setContext(final String key, final String value) {
         context.put(key, value);

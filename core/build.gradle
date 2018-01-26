@@ -1,55 +1,79 @@
-import org.apache.tools.ant.filters.ReplaceTokens
+/**
+ * The Rundeck Core API build file
+ **/
 
-apply plugin: 'java'
-apply plugin: 'maven'
-sourceCompatibility = 1.5
-version = '1.4.4-dev'
+description = 'The Rundeck Core API project'
+
 archivesBaseName = 'rundeck-core'
-group = "com.dtolabs.rundeck"
 defaultTasks 'clean','assemble'
-repositories {
-    mavenCentral()
-    add(new org.apache.ivy.plugins.resolver.FileSystemResolver()) {
-        name = 'localdeps'
-        //addIvyPattern "$projectDir/../dependencies/[organisation]/[module]-ivy-[revision].xml"
-        addArtifactPattern "$projectDir/../dependencies/[module]/[ext]s/[module]-[revision](-[classifier]).[ext]"
-        descriptor = 'optional'
-        checkmodified = true
+ext.rundeckToolsDependencies=''
+apply plugin: "groovy"
+
+dependencies {
+    compile project(":rundeck-storage:rundeck-storage-api")
+    compile project(":rundeck-storage:rundeck-storage-conf")
+    compile 'org.apache.ant:ant:1.8.3',
+        'log4j:log4j:1.2.17',
+        'commons-codec:commons-codec:1.5',
+        'commons-beanutils:commons-beanutils:1.8.3',
+        'commons-collections:commons-collections:3.2.2',
+        'commons-logging:commons-logging:1.1.1',
+        'commons-lang:commons-lang:2.6',
+        'dom4j:dom4j:1.6.1',
+        'commons-cli:commons-cli:1.0',
+        'org.apache.ant:ant-jsch:1.8.3',
+        'com.jcraft:jsch:0.1.53',
+        'com.jcraft:jsch.agentproxy.jsch:0.0.9',
+        'com.jcraft:jsch.agentproxy.sshagent:0.0.9',
+        'com.jcraft:jsch.agentproxy.usocket-jna:0.0.9',
+        'com.jcraft:jsch.agentproxy.usocket-nc:0.0.9',
+        'com.jcraft:jsch.agentproxy.connector-factory:0.0.9',
+        'com.jcraft:jsch.agentproxy.core:0.0.9',
+        'com.fasterxml.jackson.core:jackson-databind:2.5.3',
+        'com.fasterxml.jackson.core:jackson-core:2.5.3',
+        'com.fasterxml.jackson.core:jackson-annotations:2.5.3',
+        'org.yaml:snakeyaml:1.9',
+        'xerces:xercesImpl:2.11.0',
+        'xml-apis:xml-apis:1.4.01',
+
+    compile ('jaxen:jaxen:1.1') {
+        // Remove xerces apis as that should be provided by jdk
+        exclude group: 'xerces', module: 'xmlParserAPIs'
+//        exclude group: 'xml-apis', module: 'xml-apis'
+        exclude group: 'xalan', module: 'xalan'
+    }
+    compile ('commons-httpclient:commons-httpclient:3.0.1') {
+        exclude group:'junit', module: 'junit'
+    }
+    testCompile 'junit:junit:4.8.1',
+        'org.mockito:mockito-all:1.8.5'
+
+    testCompile "org.codehaus.groovy:groovy-all:2.3.7"
+    testCompile "org.spockframework:spock-core:0.7-groovy-2.0"
+}
+
+def genDeps={
+    ext.rundeckToolsDependencies = configurations.runtime.files.collect { "$it.name" }.join(" ")
+}
+
+
+jar.doFirst {
+    genDeps()
+    jar {
+        manifest {
+            attributes 'Rundeck-Tools-Dependencies': rundeckToolsDependencies
+        }
     }
 }
-dependencies {
-    compile( 
-        [group: 'org.apache.ant', name: 'ant', version: '1.7.1',ext:'jar'],
-        [group: 'org.apache.ant', name: 'ant-launcher', version: '1.7.1',ext:'jar'],
-        [group: 'log4j', name: 'log4j', version: '1.2.16',ext:'jar'],
-        [group: 'commons-codec', name: 'commons-codec', version: '1.5',ext:'jar'],
-        [group: 'commons-httpclient', name: 'commons-httpclient', version: '3.0.1',ext:'jar'],
-        [group: 'commons-beanutils', name: 'commons-beanutils', version: '1.8.0',ext:'jar'],
-        [group: 'commons-collections', name: 'commons-collections', version: '3.2.1',ext:'jar'],
-        [group: 'commons-logging', name: 'commons-logging', version: '1.1',ext:'jar'],
-        [group: 'commons-lang', name: 'commons-lang', version: '2.4',ext:'jar'],
-        [group: 'xerces', name: 'xercesImpl', version: '2.6.0',ext:'jar'],
-        [group: 'dom4j', name: 'dom4j', version: '1.6.1',ext:'jar'],
-        [group: 'jaxen', name: 'jaxen', version: '1.1',ext:'jar'],
-        [group: 'commons-cli', name: 'commons-cli', version: '1.0',ext:'jar'],
-        [group: 'org.apache.ant', name: 'ant-jsch', version: '1.7.1',ext:'jar'],
-        [group: 'com.jcraft', name: 'jsch', version: '0.1.45',ext:'jar'],
-        [group: 'org.yaml',name:'snakeyaml',version:'1.9']
-    )
-    testCompile(
-        [group: 'junit', name: 'junit', version: '3.8.1',ext:'jar']
-    )
-}
-
 jar {
     manifest {
-        attributes 'Rundeck-Version': version,'Rundeck-Tools-Dependencies':configurations.runtime.collect { "$it.name" }.join(" ") 
+        attributes 'Rundeck-Version': version,
+                   'Rundeck-Tools-Dependencies': project.rundeckToolsDependencies
     }
 }
 
 test{
     systemProperties 'rdeck.base': "$projectDir/build/rdeck_base"
-    systemProperties 'rdeck.home': "$projectDir/build"
 }
 
 task expandTemplate << {
@@ -76,102 +100,150 @@ assemble {
     }
 }
 
-uploadArchives {
-		repositories.mavenDeployer {
-			configuration = configurations.archives
-            pom.project {
-                artifactId archivesBaseName
-                groupId "com.dtolabs.rundeck"
-                inceptionYear '2011'
-                packaging 'jar'
-                version version
-                name "RunDeck Core"
-                url 'http://rundeck.org'
-                licenses {
-                    license {
-                        name 'The Apache Software License, Version 2.0'
-                        url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
-                        distribution 'repo'
-                    }
-                }
-            }
-    }
+// make sure that we've rebuilt and assembled before install
+install.dependsOn(build)
 
-}
-
-task wrapper(type: Wrapper) {
-    gradleVersion = '1.0'
-}
-
-task createPom << {
+//build a pom we reuse for both maven builds and release to sonatype
+def buildpom={deps->
     pom {
-        project {
-            artifactId archivesBaseName
-            groupId "com.dtolabs.rundeck"
-            inceptionYear '2011'
-            packaging 'jar'
-            version version
-            name "RunDeck Core"
-            url 'http://rundeck.org'
-            licenses {
-                license {
-                    name 'The Apache Software License, Version 2.0'
-                    url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
-                    distribution 'repo'
+    project {
+        artifactId archivesBaseName
+        groupId project.group
+        inceptionYear '2011'
+        packaging 'jar'
+        version version
+        name "Rundeck Core"
+        description "Core library for the Rundeck web console for command dispatching and job scheduling"
+        url 'http://rundeck.org'
+        licenses {
+            license {
+                name 'The Apache Software License, Version 2.0'
+                url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                distribution 'repo'
+            }
+        }
+        properties{
+            'version'(version)
+            'version_build'(buildNum)
+            'version_ident'(version+'-'+buildNum)
+        }
+        scm {
+            url 'https://github.com/dtolabs/rundeck'
+            connection 'scm:git:git@github.com/dtolabs/rundeck.git'
+            developerConnection 'scm:git:git@github.com:dtolabs/rundeck.git'
+        }
+        developers {
+          developer {
+            id('gschueler')
+            name('Greg Schueler')
+            email('greg@dtosolutions.com')
+          }
+        }
+        parent {
+            groupId('org.sonatype.oss')
+            artifactId('oss-parent')
+            version('7')
+        }
+        build {
+            resources{
+                resource{
+                    directory 'src/main/meta'
+                    targetPath 'META-INF'
+                    filtering=true
+                }
+                resource{
+                    directory 'src/main/resources'
                 }
             }
-            properties{
-                'version'(version)
-                'version_build'(buildNum)
-                'version_ident'(version+'-'+buildNum)
-            }
-            build {
-                resources{
-                    resource{
-                        directory 'src/main/meta'
-                        targetPath 'META-INF'
-                        filtering=true
+            plugins{
+                plugin() {
+                  groupId('org.apache.maven.plugins')
+                  artifactId('maven-source-plugin')
+                  executions() {
+                    execution() {
+                      id('attach-sources')
+                      goals() {
+                        goal('jar')
+                      }
                     }
-                    resource{
-                        directory 'src/main/resources'
+                  }
+                }
+                plugin() {
+                  groupId('org.apache.maven.plugins')
+                  artifactId('maven-javadoc-plugin')
+                  version('2.8')
+                  configuration() {
+                    docletArtifact() {
+                      groupId('com.google.doclava')
+                      artifactId('doclava')
+                      version('1.0.3')
+                    }
+                    doclet('com.google.doclava.Doclava')
+                    /* bootclasspath required by Sun's JVM */
+                    bootclasspath('${sun.boot.class.path}')
+                    additionalparam('''-quiet
+                             -federate JDK http://download.oracle.com/javase/6/docs/api/index.html?
+                             -federationxml JDK http://doclava.googlecode.com/svn/static/api/openjdk-6.xml
+                             -hdf project.name "${project.name}"
+                             -d .
+                             -hide 101
+                             -proofread ./proof-read.txt''')
+                    useStandardDocletOptions('false')
+                    /* Apple's JVM sometimes requires more memory */
+                    additionalJOption('-J-Xmx1024m')
+                  }
+                  executions() {
+                    execution() {
+                      id('attach-javadoc')
+                      goals() {
+                        goal('jar')
+                      }
+                    }
+                  }
+                }
+                plugin{
+                    groupId 'org.apache.maven.plugins'
+                    artifactId 'maven-compiler-plugin'
+                    version '2.3.2'
+                    configuration{
+                        'source'('1.7')
+                        'target'('1.7')
                     }
                 }
-                plugins{
-                    plugin{
-                        groupId 'org.apache.maven.plugins'
-                        artifactId 'maven-compiler-plugin'
-                        version '2.3.2'
-                        configuration{
-                            'source'('1.5')
-                            'target'('1.5')
+                plugin{
+                    groupId 'org.apache.maven.plugins'
+                    artifactId 'maven-surefire-plugin'
+                    version '2.10'
+                    configuration{
+                        systemPropertyVariables{
+                            'rdeck.base'('${project.build.directory}/rdeck_base')
                         }
+                        redirectTestOutputToFile 'true'
                     }
-                    plugin{
-                        groupId 'org.apache.maven.plugins'
-                        artifactId 'maven-surefire-plugin'
-                        version '2.10'
-                        configuration{
-                            systemPropertyVariables{
-                                'rdeck.base'('${project.build.directory}/rdeck_base')
-                            }
-                            redirectTestOutputToFile 'true'
-                        }
-                    }
-                    plugin{
-                        groupId 'org.apache.maven.plugins'
-                        artifactId 'maven-jar-plugin'
-                        version '2.3.2'
-                        configuration{
-                            archive{
-                              manifestEntries{
-                                'Rundeck-Version'(version)
-                                'Rundeck-Tools-Dependencies'(configurations.runtime.collect { "$it.name" }.join(" "))
-                              }
-                            }
+                }
+                plugin{
+                    groupId 'org.apache.maven.plugins'
+                    artifactId 'maven-jar-plugin'
+                    version '2.3.2'
+                    configuration{
+                        archive{
+                          manifestEntries{
+                            'Rundeck-Version'(version)
+                            'Rundeck-Tools-Dependencies'(deps)
+                          }
                         }
                     }
                 }
             }
         }
-    }.writeTo("pom.xml")
+    }
+}
+}
+
+task createPom << {
+    buildpom(rundeckToolsDependencies).writeTo("pom.xml")
+}
+
+createPom.doFirst {
+    genDeps()
 }

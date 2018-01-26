@@ -9,7 +9,7 @@ echo "current RELEASE: $CUR_RELEASE"
 echo "current TAG: $CUR_TAG"
 
 if [ -z "$1" ] ; then
-echo "usage: setversion.sh <version> [release] [tag]"
+echo "usage: setversion.sh <version> [release] [GA]"
 exit 2
 fi
 
@@ -22,30 +22,34 @@ else
     RELEASE=$1
 fi
 shift
-if [ -z "$1" ]; then
-    TAG=$CUR_TAG
+if [ "$1" = "GA" ]; then
+    TAG=
+    PTAG="GA"
+elif [ -n "$1" ]; then
+    TAG="-$1"
+    PTAG="$1"
 else
-    TAG=$1
+    TAG="-SNAPSHOT"
+    PTAG="SNAPSHOT"
 fi
 
-IDENT_TAG="-$TAG"
-if [ "$TAG" = "GA" ] ; then
-    IDENT_TAG=
-fi
+VNAME="${VERSION}"
 
-VNAME="${VERSION}${IDENT_TAG}"
-
-echo "new NUMBER: $VERSION"
+echo "new NUMBER: $VERSION${TAG}"
 echo "new RELEASE: $RELEASE"
-echo "new TAG: $TAG"
 echo "new VERSION: ${VNAME}"
 
 #alter version.properties
 perl  -i'.orig' -p -e "s#^version\.number\s*=.*\$#version.number=$VERSION#" `pwd`/version.properties
 perl  -i'.orig' -p -e "s#^version\.release\.number\s*=.*\$#version.release.number=$RELEASE#" `pwd`/version.properties
-perl  -i'.orig' -p -e "s#^version\.tag\s*=.*\$#version.tag=$TAG#" `pwd`/version.properties
+perl  -i'.orig' -p -e "s#^version\.tag\s*=.*\$#version.tag=$PTAG#" `pwd`/version.properties
+
+perl  -i'.orig' -p -e "s#^currentVersion\s*=.*\$#currentVersion = $VERSION#" `pwd`/gradle.properties
 
 echo MODIFIED: `pwd`/version.properties
+
+perl  -i'.orig' -p -e "s#^app.version\s*=.*\$#app.version = $VERSION${TAG}#" `pwd`/rundeckapp/application.properties
+perl  -i'.orig' -p -e "s#^build.ident\s*=.*\$#build.ident = $VERSION-${RELEASE}${TAG}#" `pwd`/rundeckapp/application.properties
 
 #alter pom.xml version
 
@@ -53,36 +57,19 @@ XML=$(which xmlstarlet)
 if [ -z "$XML" ] ; then
     XML=$(which xml)
 fi
-$XML ed -P -S -N p=http://maven.apache.org/POM/4.0.0 -u "/p:project/p:version" -v "${VNAME}" pom.xml > pom_new.xml
+
+$XML ed -P -S -N p=http://maven.apache.org/POM/4.0.0 -u "/p:project/p:version" -v "${VNAME}${TAG}" pom.xml | $XML fo > pom_new.xml
 mv pom_new.xml pom.xml
 
-echo MODIFIED: `pwd`/pom.xml
-
-#alter grails i18n messages main.app.version.num=1.0.0
-perl  -i'.orig' -p -e "s#^app\.version\s*=.*\$#app.version=${VNAME}#" `pwd`/rundeckapp/application.properties
-perl  -i'.orig' -p -e "s#^build\.ident\s*=.*\$#build.ident=$VERSION-$RELEASE$IDENT_TAG#" `pwd`/rundeckapp/application.properties
-
-echo MODIFIED: `pwd`/rundeckapp/application.properties
-
-$XML ed -P -S -N p=http://maven.apache.org/POM/4.0.0 -u "/p:project/p:version" -v "${VNAME}" rundeckapp/pom.xml > rundeckapp/pom_new.xml
+$XML ed -P -S -N p=http://maven.apache.org/POM/4.0.0 -u "/p:project/p:version" -v "${VNAME}${TAG}" rundeckapp/pom.xml  | $XML fo  > rundeckapp/pom_new.xml
 mv rundeckapp/pom_new.xml rundeckapp/pom.xml
 
 echo MODIFIED: `pwd`/rundeckapp/pom.xml
-
-#modify core/build.gradle
-perl  -i'.orig' -p -e "s#^version\s*=.*\$#version = '$VNAME'#" `pwd`/core/build.gradle
-cd core/ && ./gradlew -PbuildNum=${RELEASE} createPom && cd ..
-
-echo MODIFIED: `pwd`/core/build.gradle
-
-#modify plugins/build.gradle
-perl  -i'.orig' -p -e "s#^(\s*)version\s*=.*\$#\1version = '$VNAME'#" `pwd`/plugins/build.gradle
-cd plugins/ && ./gradlew createPom && cd ..
-
-echo MODIFIED: `pwd`/plugins/build.gradle
-
-#modify rundeck-launcher/build.gradle
-perl  -i'.orig' -p -e "s#^(\s*)version\s*=.*\$#\1version = '$VNAME'#" `pwd`/rundeck-launcher/build.gradle
-cd rundeck-launcher/ && ./gradlew createPom && cd ..
-
-echo MODIFIED: `pwd`/rundeck-launcher/build.gradle
+set -x
+if [ "$PTAG" == "SNAPSHOT" ]; then
+    ./gradlew -PbuildNum=${RELEASE} createPom
+elif [ "$PTAG" == "GA" ] ; then
+    ./gradlew -PbuildNum=${RELEASE} -Penvironment=release createPom
+else
+    ./gradlew -PbuildNum=${RELEASE} -Penvironment=release -PreleaseTag=$PTAG createPom
+fi

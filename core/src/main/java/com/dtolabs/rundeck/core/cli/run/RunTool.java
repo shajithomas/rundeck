@@ -23,18 +23,22 @@
 */
 package com.dtolabs.rundeck.core.cli.run;
 
+import com.dtolabs.client.services.DispatcherConfig;
 import com.dtolabs.rundeck.core.Constants;
 import com.dtolabs.rundeck.core.cli.*;
 import com.dtolabs.rundeck.core.cli.queue.ConsoleExecutionFollowReceiver;
 import com.dtolabs.rundeck.core.cli.queue.QueueTool;
-import com.dtolabs.rundeck.core.common.Framework;
+import com.dtolabs.rundeck.core.common.FrameworkFactory;
 import com.dtolabs.rundeck.core.dispatcher.*;
+import com.dtolabs.rundeck.core.utils.IPropertyLookup;
 import com.dtolabs.rundeck.core.utils.NodeSet;
 import org.apache.commons.cli.CommandLine;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 
+import java.io.File;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -72,6 +76,19 @@ public class RunTool extends BaseTool {
         this.action = action;
     }
 
+    public String getSingleProjectName() {
+        try {
+            List<String> strings = getCentralDispatcher().listProjectNames();
+            if(strings.size()==1) {
+                return strings.get(0);
+            }
+        } catch (CentralDispatcherException e) {
+            debug(org.apache.tools.ant.util.StringUtils.getStackTrace(e));
+            error("Couldn't list projects: " + e.getMessage());
+        }
+        return null;
+    }
+
     /**
      * Enumeration of available actions
      */
@@ -102,12 +119,6 @@ public class RunTool extends BaseTool {
 
 
     /**
-     * Reference to the Framework instance
-     */
-    private final Framework framework;
-    SingleProjectResolver internalResolver;
-
-    /**
      * Creates an instance and executes {@link #run(String[])}.
      *
      * @param args command line arg vector
@@ -116,7 +127,7 @@ public class RunTool extends BaseTool {
      */
     public static void main(final String[] args) throws Exception {
         PropertyConfigurator.configure(Constants.getLog4jPropertiesFile().getAbsolutePath());
-        final RunTool tool = new RunTool(new DefaultCLIToolLogger());
+        final RunTool tool = new RunTool(createDefaultDispatcherConfig(),new DefaultCLIToolLogger());
         tool.setShouldExit(true);
         int exitCode = 1; //pessimistic initial value
 
@@ -137,10 +148,11 @@ public class RunTool extends BaseTool {
     }
 
     /**
-     * Create QueueTool with default Framework instances located by the system rdeck.base property.
+     * Create QueueTool with default framework properties located by the system rdeck.base property.
      */
     public RunTool() {
-        this(Framework.getInstance(Constants.getSystemBaseDir()), new Log4JCLIToolLogger(log4j));
+        this(FrameworkFactory.createFilesystemFramework(new File(Constants.getSystemBaseDir())).getPropertyLookup(),
+             new Log4JCLIToolLogger(log4j));
     }
 
     /**
@@ -149,27 +161,27 @@ public class RunTool extends BaseTool {
      * @param logger the logger
      */
     public RunTool(final CLIToolLogger logger) {
-        this(Framework.getInstance(Constants.getSystemBaseDir()), logger);
+        this(FrameworkFactory.createFilesystemFramework(new File(Constants.getSystemBaseDir())).getPropertyLookup(), logger);
     }
 
     /**
      * Create QueueTool specifying the framework
      *
-     * @param framework framework
      */
-    public RunTool(final Framework framework) {
-        this(framework, null);
+    public RunTool(final IPropertyLookup frameworkProps) {
+        this(frameworkProps, null);
     }
 
     /**
      * Create QueueTool with the framework.
      *
-     * @param framework the framework
      * @param logger    the logger
      */
-    public RunTool(final Framework framework, final CLIToolLogger logger) {
-        this.framework = framework;
-        internalResolver = new FrameworkSingleProjectResolver(framework);
+    public RunTool(final IPropertyLookup frameworkProps, final CLIToolLogger logger) {
+        this(FrameworkFactory.createDispatcherConfig(frameworkProps), logger);
+    }
+    public RunTool(final DispatcherConfig dispatcherConfig, final CLIToolLogger logger) {
+        setCentralDispatcher(FrameworkFactory.createDispatcher(dispatcherConfig));
         this.clilogger = logger;
         if (null == clilogger) {
             clilogger = new Log4JCLIToolLogger(log4j);
@@ -332,25 +344,36 @@ public class RunTool extends BaseTool {
 
             if (null == argJob && null == argIdlist) {
                 throw new CLIToolOptionsException(
-                    "run action: -" + Options.JOB_OPTION + "/--" + Options.JOB_OPTION_LONG + " option or -"
-                    + Options.ID_OPTION + "/--"
-                    + Options.ID_OPTION_LONG + " is required");
+                        "run action: -" + Options.JOB_OPTION + "/--" + Options.JOB_OPTION_LONG + " option or -"
+                        + Options.ID_OPTION + "/--"
+                        + Options.ID_OPTION_LONG + " is required"
+                );
             }
             if (null != argJob && null != argIdlist) {
                 throw new CLIToolOptionsException(
-                    "run action: -" + Options.JOB_OPTION + "/--" + Options.JOB_OPTION_LONG + " option and -"
-                    + Options.ID_OPTION + "/--"
-                    + Options.ID_OPTION_LONG + " cannot be combined, please specify only one.");
+                        "run action: -" + Options.JOB_OPTION + "/--" + Options.JOB_OPTION_LONG + " option and -"
+                        + Options.ID_OPTION + "/--"
+                        + Options.ID_OPTION_LONG + " cannot be combined, please specify only one."
+                );
             }
             if (null != argJob && null == argProject) {
-                if (internalResolver.hasSingleProject()) {
-                    argProject = internalResolver.getSingleProjectName();
+                argProject = getSingleProjectName();
+                if (null != argProject) {
                     debug("# No project specified, defaulting to: " + argProject);
                 } else {
                     throw new CLIToolOptionsException(
-                        "run action: -" + Options.JOB_OPTION + "/--" + Options.JOB_OPTION_LONG + " option requires -"
-                        + Options.PROJECT_OPTION + "/--"
-                        + Options.PROJECT_OPTION_LONG + " option");
+                            "run action: -" +
+                            Options.JOB_OPTION +
+                            "/--" +
+                            Options.JOB_OPTION_LONG +
+                            " option requires -"
+                            +
+                            Options.PROJECT_OPTION +
+                            "/--"
+                            +
+                            Options.PROJECT_OPTION_LONG +
+                            " option"
+                    );
                 }
             }
         }
@@ -383,7 +406,7 @@ public class RunTool extends BaseTool {
     /**
      * Call the action
      *
-     * @throws com.dtolabs.rundeck.core.cli.jobs.JobsToolException
+     * @throws com.dtolabs.rundeck.core.cli.run.RunToolException
      *          if an error occurs
      */
     protected void go() throws RunToolException, CLIToolOptionsException {
@@ -425,13 +448,19 @@ public class RunTool extends BaseTool {
         final boolean argProgress=followOptions.argProgress;
         final boolean argQuiet=followOptions.argQuiet;
 
-        final NodeSet nodeset = nodefilterOptions.getNodeSet();
-        final Boolean argKeepgoing = nodefilterOptions.isKeepgoingSet() ? nodeset.isKeepgoing() : null;
+        if (nodefilterOptions.getArgIncludeNodes()!=null || nodefilterOptions.getArgExcludeNodes()!=null) {
+            warn("-I/-X are deprecated, use -F with a filter string. This option will be removed in a future version.");
+        }
+        final String nodeFilter = null != nodefilterOptions.getArgNodeFilter() ? nodefilterOptions.getArgNodeFilter() :
+                null != nodefilterOptions.getNodeSet() ? NodeSet.generateFilter(nodefilterOptions.getNodeSet()) : null;
+        final Boolean argKeepgoing = nodefilterOptions.isKeepgoingSet() ? nodefilterOptions.isArgKeepgoing() : null;
+        final Boolean argExcludePrecedence= nodefilterOptions.isArgExcludePrecedence();
+        final int nodeThreadcount = nodefilterOptions.getArgThreadCount();
         final int loglevel = loglevelOptions.getLogLevel();
         final String[] extraOpts = extendedOptions.getExtendedOptions();
 
         try {
-            result = framework.getCentralDispatcherMgr().queueDispatcherJob(new IDispatchedJob() {
+            result = getCentralDispatcher().queueDispatcherJob(new IDispatchedJob() {
                 public String[] getArgs() {
                     return extraOpts;
                 }
@@ -444,8 +473,18 @@ public class RunTool extends BaseTool {
                     return null;
                 }
 
-                public NodeSet getNodeSet() {
-                    return nodeset;
+                @Override
+                public String getNodeFilter() {
+                    return nodeFilter;
+                }
+
+                public Boolean getNodeExcludePrecedence() {
+                    return argExcludePrecedence;
+                }
+
+                @Override
+                public int getNodeThreadcount() {
+                    return nodeThreadcount;
                 }
 
                 public IStoredJobRef getJobRef() {
@@ -501,7 +540,10 @@ public class RunTool extends BaseTool {
             }else if(progress){
                 mode= ConsoleExecutionFollowReceiver.Mode.progress;
             }
-            successful = QueueTool.followAction(item.getId(), true, mode, framework, System.out, this);
+            successful = QueueTool.followAction(item.getId(), true, mode,
+                                                System.out, this,
+                                                getCentralDispatcher()
+            );
         } catch (CentralDispatcherException e) {
             throw new RunToolException("Failed following output for execution: " + item.getId(), e);
         }
@@ -519,7 +561,7 @@ public class RunTool extends BaseTool {
         return "run : start running a Job on the server, and optionally follow the output\n"
                + "run -i <id>: Run a job by ID immediately\n"
                + "run -j <group/name>: Run a job by Name immediately. Group must be specified if name is not unique.\n"
-               + "run -I <include> -X <exclude> [-i/-j ...]: Specify node filters and run a Job\n"
+               + "run -F <node filter> [-i/-j ...]: Specify node filters and run a Job\n"
                + "run -i <id> -- <arguments...>: Specify commandline arguments to the Job\n"
                + "run -i <id> --follow -- <arguments...>: Print output of the job as it is received\n"
                + "run -i <id> --follow --progress -- <arguments...>: Follow progress of the job\n"

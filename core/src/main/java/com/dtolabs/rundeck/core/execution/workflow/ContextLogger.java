@@ -24,6 +24,7 @@
 package com.dtolabs.rundeck.core.execution.workflow;
 
 import com.dtolabs.rundeck.core.execution.BaseLogger;
+import com.dtolabs.rundeck.core.logging.LogLevel;
 
 import java.util.Map;
 
@@ -38,6 +39,7 @@ public interface ContextLogger extends BaseLogger {
      * Logs message via implementation specific log facility
      *
      * @param message message to log
+     * @param context context
      */
     void log(String message, Map<String, String> context);
 
@@ -45,6 +47,7 @@ public interface ContextLogger extends BaseLogger {
      * Logs error message via implementation specific log facility
      *
      * @param message message to log
+     * @param context context
      */
     void error(String message, Map<String, String> context);
 
@@ -52,6 +55,7 @@ public interface ContextLogger extends BaseLogger {
      * Logs warning message via implementation specific log facility
      *
      * @param message message to log
+     * @param context context
      */
     void warn(String message, Map<String, String> context);
 
@@ -59,6 +63,7 @@ public interface ContextLogger extends BaseLogger {
      * Logs verbose message via implementation specific log facility
      *
      * @param message message to log
+     * @param context context
      */
     void verbose(String message, Map<String, String> context);
 
@@ -66,6 +71,16 @@ public interface ContextLogger extends BaseLogger {
      * Logs verbose message via implementation specific log facility
      *
      * @param message message to log
+     * @param context context
      */
     void debug(String message, Map<String, String> context);
+
+    /**
+     * Emit arbitrary event type
+     * @param eventType type
+     * @param level level
+     * @param message message
+     * @param context context
+     */
+    void emit(String eventType, LogLevel level, String message, Map<String, String> context);
 }

@@ -23,21 +23,28 @@
 */
 package com.dtolabs.rundeck.core.plugins;
 
-import com.dtolabs.rundeck.core.common.Framework;
-import com.dtolabs.rundeck.core.execution.service.ProviderCreationException;
-import com.dtolabs.rundeck.core.execution.service.ProviderLoaderException;
-import com.dtolabs.rundeck.core.tools.AbstractBaseTest;
-import com.dtolabs.rundeck.core.utils.StringArrayUtil;
-
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
+
+import junit.framework.Assert;
+
+import com.dtolabs.rundeck.core.Constants;
+import com.dtolabs.rundeck.core.common.Framework;
+import com.dtolabs.rundeck.core.execution.service.ProviderCreationException;
+import com.dtolabs.rundeck.core.execution.service.ProviderLoaderException;
+import com.dtolabs.rundeck.core.tools.AbstractBaseTest;
+import com.dtolabs.rundeck.core.utils.FileUtils;
+import com.dtolabs.rundeck.core.utils.StringArrayUtil;
 
 /**
  * TestJarPluginProviderLoader is ...
@@ -45,15 +52,14 @@ import java.util.jar.Manifest;
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  */
 public class TestJarPluginProviderLoader extends AbstractBaseTest {
-    private static final String TEST_SERVICE = "TestService";
+    public static final String CURRENT_PLUGIN_VERSION = "1.1";
+    public static final String TOO_LOW_PLUGIN_VERSION = "1.0";
     Framework testFramework;
     String testnode;
-    private static final String TEST_PROJECT = "TestJarPluginProviderLoader";
-    private PluginManagerService service;
     private File testDir = new File("src/test/resources/com/dtolabs/rundeck/core/plugins");
-    private File testJar1 = new File("src/test/resources/com/dtolabs/rundeck/core/plugins/test-plugin1.jar");
     private File testJarDNE = new File("src/test/resources/com/dtolabs/rundeck/core/plugins/DNE-plugin.jar");
     private File testCachedir;
+    private File testPluginJarCacheDirectory;
 
     public TestJarPluginProviderLoader(final String name) {
         super(name);
@@ -62,29 +68,37 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
     public void setUp() {
         super.setUp();
         testCachedir = getFrameworkInstance().getLibextCacheDir();
+        try {
+            testPluginJarCacheDirectory = File.createTempFile("tempRundeckJars", UUID.randomUUID().toString());
+            testPluginJarCacheDirectory.deleteOnExit();
+            testPluginJarCacheDirectory.delete();
+            testPluginJarCacheDirectory.mkdirs();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public void testConstruct() throws Exception {
         try {
-            new JarPluginProviderLoader(null,null);
+            new JarPluginProviderLoader(null, null, null);
             fail("expected npe");
         } catch (NullPointerException e) {
             assertNotNull(e);
         }
         try {
-            new JarPluginProviderLoader(testJarDNE,null);
+            new JarPluginProviderLoader(testJarDNE, null, null);
             fail("expected illegal argument");
         } catch (IllegalArgumentException e) {
             assertNotNull(e);
         }
         try {
-            new JarPluginProviderLoader(testDir,null);
+            new JarPluginProviderLoader(testDir,null, null);
             fail("expected illegal argument");
         } catch (IllegalArgumentException e) {
             assertNotNull(e);
         }
         final File testJar = createTestJar(null, null);
-        final JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar, testCachedir);
+        final JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar, testPluginJarCacheDirectory, testCachedir);
         assertNotNull(jarPluginProviderLoader);
     }
 
@@ -96,8 +110,11 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
         } catch (JarPluginProviderLoader.InvalidManifestException e) {
             assertNotNull(e);
             assertEquals("Jar plugin manifest attribute missing: " + JarPluginProviderLoader.RUNDECK_PLUGIN_ARCHIVE,
-                e.getMessage());
+                         e.getMessage());
         }
+    }
+
+    public void testValidateJarManifestNotArchive() throws Exception {
         //plugin archive attribute was not 'true'
         try {
             final Attributes mainAttributes = new Attributes();
@@ -109,6 +126,9 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
             assertEquals(JarPluginProviderLoader.RUNDECK_PLUGIN_ARCHIVE + " was not 'true': false",
                 e.getMessage());
         }
+    }
+
+    public void testValidateJarManifestNoVersion() throws Exception {
         //no plugin version attribute
         try {
             final Attributes mainAttributes = new Attributes();
@@ -120,7 +140,9 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
             assertEquals("Jar plugin manifest attribute missing: " + JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION,
                 e.getMessage());
         }
+    }
 
+    public void testValidateJarManifestInvalidVersion() throws Exception {
         //invalid version attribute
         try {
             final Attributes mainAttributes = new Attributes();
@@ -131,14 +153,33 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
         } catch (JarPluginProviderLoader.InvalidManifestException e) {
             assertNotNull(e);
             assertEquals(
-                "Unssupported plugin version: " + JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION + ": invalid",
+                "Unsupported plugin version: " + JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION + ": invalid",
                 e.getMessage());
         }
+    }
+
+    public void testValidateJarManifestLowVersion() throws Exception {
+        //invalid version attribute
+        try {
+            final Attributes mainAttributes = new Attributes();
+            mainAttributes.putValue(JarPluginProviderLoader.RUNDECK_PLUGIN_ARCHIVE, "true");
+            mainAttributes.putValue(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, TOO_LOW_PLUGIN_VERSION);
+            JarPluginProviderLoader.validateJarManifest(mainAttributes);
+            fail("should not validate");
+        } catch (JarPluginProviderLoader.InvalidManifestException e) {
+            assertNotNull(e);
+            assertEquals(
+                "Unsupported plugin version: " + JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION + ": "+ TOO_LOW_PLUGIN_VERSION,
+                e.getMessage());
+        }
+    }
+
+    public void testValidateJarManifestNoClassnames() throws Exception {
         //no plugin classnames attribute
         try {
             final Attributes mainAttributes = new Attributes();
             mainAttributes.putValue(JarPluginProviderLoader.RUNDECK_PLUGIN_ARCHIVE, "true");
-            mainAttributes.putValue(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, "1.0");
+            mainAttributes.putValue(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, CURRENT_PLUGIN_VERSION);
             JarPluginProviderLoader.validateJarManifest(mainAttributes);
             fail("should not validate");
         } catch (JarPluginProviderLoader.InvalidManifestException e) {
@@ -147,11 +188,14 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
                 "Jar plugin manifest attribute missing: " + JarPluginProviderLoader.RUNDECK_PLUGIN_CLASSNAMES,
                 e.getMessage());
         }
+    }
+
+    public void testValidateJarManifestValid() throws Exception {
         {
             //valid
             final Attributes mainAttributes = new Attributes();
             mainAttributes.putValue(JarPluginProviderLoader.RUNDECK_PLUGIN_ARCHIVE, "true");
-            mainAttributes.putValue(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, "1.0");
+            mainAttributes.putValue(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, CURRENT_PLUGIN_VERSION);
             mainAttributes.putValue(JarPluginProviderLoader.RUNDECK_PLUGIN_CLASSNAMES, "something");
             JarPluginProviderLoader.validateJarManifest(mainAttributes);
         }
@@ -172,14 +216,14 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
         {
             final Map<String, String> entries = new HashMap<String, String>();
             entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_ARCHIVE, "true");
-            entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, "1.0");
+            entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, CURRENT_PLUGIN_VERSION);
             final File testJar = createTestJar(entries, null);
             assertFalse(JarPluginProviderLoader.isValidJarPlugin(testJar));
         }
         {
             final Map<String, String> entries = new HashMap<String, String>();
             entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_ARCHIVE, "true");
-            entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, "1.0");
+            entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, CURRENT_PLUGIN_VERSION);
             entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_CLASSNAMES, "something");
             final File testJar = createTestJar(entries, null);
             assertTrue(JarPluginProviderLoader.isValidJarPlugin(testJar));
@@ -251,13 +295,13 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
 
         final Map<String, String> entries = new HashMap<String, String>();
         entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_ARCHIVE, "true");
-        entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, "1.0");
+        entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, CURRENT_PLUGIN_VERSION);
         entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_CLASSNAMES, classnameString(classes));
 
         final File testJar11 = createTestJar(entries, null, classes);
 
 
-        final JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar11, testCachedir);
+        final JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar11, testPluginJarCacheDirectory, testCachedir);
         //non-existent
         final JarTestType1 testx = jarPluginProviderLoader.load(service, "testX");
         assertNull(testx);
@@ -284,13 +328,13 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
 
         final Map<String, String> entries = new HashMap<String, String>();
         entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_ARCHIVE, "true");
-        entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, "1.0");
+        entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, CURRENT_PLUGIN_VERSION);
         entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_CLASSNAMES, classnameString(classes));
 
         final File testJar11 = createTestJar(entries, null, classes);
 
 
-        final JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar11, testCachedir);
+        final JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar11, testPluginJarCacheDirectory, testCachedir);
         //non-existent
         final JarTestType1 testx = jarPluginProviderLoader.load(service, "testX");
         assertNull(testx);
@@ -299,7 +343,7 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
         assertNotNull(test2);
         assertTrue(test2 instanceof testProvider2);
     }
-
+    
     public void testLoadClass() throws Exception {
         testService1 service = new testService1() {
             @Override
@@ -314,13 +358,13 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
 
         final Map<String, String> entries = new HashMap<String, String>();
         entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_ARCHIVE, "true");
-        entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, "1.0");
+        entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, CURRENT_PLUGIN_VERSION);
         entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_CLASSNAMES, classnameString(classes));
 
         final File testJar11 = createTestJar(entries, null, classes);
 
-
-        final JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar11, testCachedir);
+        final JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar11, testPluginJarCacheDirectory, testCachedir);
+        
         //non-existent
         final JarTestType1 testx = jarPluginProviderLoader.load(service, "testX");
         assertNull(testx);
@@ -340,6 +384,53 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
         }
     }
 
+    public void testLoadClassRemovesExistingCachedJars() throws Exception {
+        testService1 service = new testService1() {
+            @Override
+            public boolean isValidProviderClass(Class clazz) {
+                return JarTestType1.class.isAssignableFrom(clazz);
+            }
+        };
+        service.name = "TestService";
+        service.isvalid = true;
+        service.createInstance = new testProvider2();
+        
+        final Class[] classes = {testProvider2.class};
+
+        final Map<String, String> entries = new HashMap<String, String>();
+        entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_ARCHIVE, "true");
+        entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, CURRENT_PLUGIN_VERSION);
+        entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_CLASSNAMES, classnameString(classes));
+
+        final File testJar11 = createTestJar(entries, null, classes);
+        
+        FileUtils.deleteDir(testPluginJarCacheDirectory);
+        testPluginJarCacheDirectory.mkdirs();
+
+        final JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar11, testPluginJarCacheDirectory, testCachedir);
+        // Create test jar in pluginCache
+        File otherJar = new File(testPluginJarCacheDirectory, "20120301121249123-" + testJar11.getName());
+        otherJar.createNewFile();
+        otherJar.deleteOnExit();
+        
+        // Create dependency lib
+        jarPluginProviderLoader.getFileCacheDir().mkdirs();
+        File dependency = new File(jarPluginProviderLoader.getFileCacheDir(), "dependency.jar");
+        dependency.createNewFile();
+        dependency.deleteOnExit();
+
+        //valid
+        final JarTestType1 test2 = jarPluginProviderLoader.load(service, "test2");
+        assertNotNull(test2);
+        assertTrue(test2 instanceof testProvider2);
+        
+        Assert.assertFalse("Expected existing cached jar to be deleted", otherJar.exists());
+        Assert.assertFalse("Expected dependency jar to be deleted", dependency.exists());
+        File[] files = testPluginJarCacheDirectory.listFiles();
+        Assert.assertEquals("Expected single cached jar in plugin jar cache", 1, files.length);
+        Assert.assertTrue("Expected cached jar to meet requirements for equivalency against original jar", jarPluginProviderLoader.isEquivalentPluginJar(files[0]));
+    }
+
     public void testCreateProviderForClass() throws Exception {
         testService1 service1 = new testService1() {
             @Override
@@ -351,7 +442,7 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
         service1.createInstance = new testProvider2();
 
         final JarTestType1 object = JarPluginProviderLoader.createProviderForClass(service1,
-            testProvider2.class);
+                testProvider2.class);
         assertNotNull(object);
         assertTrue(object instanceof testProvider2);
 
@@ -423,13 +514,91 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
 
         final Map<String, String> entries = new HashMap<String, String>();
         entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_ARCHIVE, "true");
-        entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, "1.0");
+        entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_VERSION, CURRENT_PLUGIN_VERSION);
         entries.put(JarPluginProviderLoader.RUNDECK_PLUGIN_CLASSNAMES, classnameString(classes));
 
         final File testJar11 = createTestJar(entries, null, classes);
-        final JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar11, testCachedir);
+        final JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar11, testPluginJarCacheDirectory, testCachedir);
         final String[] classnames = jarPluginProviderLoader.getClassnames();
         assertTrue(Arrays.equals(classnames(classes), classnames));
+    }
+    
+    public void testIsEquivalentPluginJarDoesNotConformToNamingConvention() throws IOException {
+        File testJar = createTestJar(null, null);
+        JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar,
+                testPluginJarCacheDirectory, testCachedir);
+        
+        // This name is short by 1 char
+        File otherJar = new File(testPluginJarCacheDirectory, "2012030112124912-" + testJar.getName());
+        Assert.assertFalse("Expected non-conforming name failure", jarPluginProviderLoader.isEquivalentPluginJar(otherJar));
+    }
+    
+    public void testIsEquivalentPluginJar() throws IOException {
+        File testJar = createTestJar(null, null);
+        JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar,
+                testPluginJarCacheDirectory, testCachedir);
+        
+        File otherJar = new File(testPluginJarCacheDirectory, "20120301121249123-" + testJar.getName());
+        Assert.assertTrue("Expected jar names to be the same without timestamp", jarPluginProviderLoader.isEquivalentPluginJar(otherJar));
+    }
+    
+    public void testIsEquivalentPluginJarDifferentNames() throws IOException {
+        File testJar = createTestJar(null, null);
+        JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar,
+                testPluginJarCacheDirectory, testCachedir);
+        
+        File otherJar = new File(testPluginJarCacheDirectory, "20140201121249212-this-is-not-the-jar-name.jar");
+        Assert.assertFalse("Jar names are different without timestamp", jarPluginProviderLoader.isEquivalentPluginJar(otherJar));
+    }
+    
+    public void testGenerateCachedJarName() throws IOException {
+        File testJar = createTestJar(null, null);
+        JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar,
+                testPluginJarCacheDirectory, testCachedir);
+        String cachedName = jarPluginProviderLoader.generateCachedJarName();
+        Assert.assertTrue("Expected cached name - mtime to be the same as original jar name", cachedName.substring(18).equals(testJar.getName()));
+    }
+    
+    public void testCreateCachedJar() throws Exception {
+        File testJar = createTestJar(null, null);
+        
+        FileUtils.deleteDir(testPluginJarCacheDirectory);
+        testPluginJarCacheDirectory.mkdirs();
+
+        final JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar, testPluginJarCacheDirectory, testCachedir);
+        
+        // Create test jar in pluginCache
+        File otherJar = new File(testPluginJarCacheDirectory, "20120301121249123-" + testJar.getName());
+        otherJar.createNewFile();
+        otherJar.deleteOnExit();
+        
+        jarPluginProviderLoader.createCachedJar();
+        
+        Assert.assertFalse("Expected existing cached jar to be deleted", otherJar.exists());
+        File[] files = testPluginJarCacheDirectory.listFiles();
+        Assert.assertEquals("Expected single cached jar in plugin jar cache", 1, files.length);
+        Assert.assertTrue("Expected cached jar to meet requirements for equivalency against original jar", jarPluginProviderLoader.isEquivalentPluginJar(files[0]));
+    }
+    public void testCreateCachedJarInvalidDir() throws Exception {
+        File testJar = createTestJar(null, null);
+
+        FileUtils.deleteDir(testPluginJarCacheDirectory);
+        testPluginJarCacheDirectory.mkdirs();
+
+        //specify a dir which will fail to read, e.g. a file.
+        File invalidCacheDir = new File(testPluginJarCacheDirectory, "notadir");
+        Assert.assertTrue(invalidCacheDir.createNewFile());
+        invalidCacheDir.deleteOnExit();
+
+        final JarPluginProviderLoader jarPluginProviderLoader = new JarPluginProviderLoader(testJar, invalidCacheDir, testCachedir);
+
+        try {
+            jarPluginProviderLoader.createCachedJar();
+            fail("Should fail to create cached jar");
+        } catch (PluginException e) {
+            e.printStackTrace();
+        }
+        invalidCacheDir.delete();
     }
 
     /**
@@ -443,7 +612,7 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
 
         final Manifest manifest = new Manifest();
         final Attributes mainAttributes = manifest.getMainAttributes();
-        mainAttributes.put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        mainAttributes.put(Attributes.Name.MANIFEST_VERSION, CURRENT_PLUGIN_VERSION);
 
         if (null != entries) {
             for (final String s : entries.keySet()) {
@@ -466,13 +635,12 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
         IOException {
         final File file = null != test ? test : File.createTempFile("createTestJar", ".jar");
         if (null == test) {
-//            file.deleteOnExit();
-            System.out.println("file: " + file.getAbsolutePath());
+            file.deleteOnExit();
         }
 
         final Manifest manifest = new Manifest();
         final Attributes mainAttributes = manifest.getMainAttributes();
-        mainAttributes.put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        mainAttributes.put(Attributes.Name.MANIFEST_VERSION, CURRENT_PLUGIN_VERSION);
 
         if (null != entries) {
             for (final String s : entries.keySet()) {
@@ -502,10 +670,6 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
         jarstream.closeEntry();
     }
 
-    public void testIsLoaderFor() throws Exception {
-
-    }
-
     public static class testService1 implements PluggableService<JarTestType1> {
         boolean isvalid;
         JarTestType1 createScriptInstance;
@@ -517,7 +681,7 @@ public class TestJarPluginProviderLoader extends AbstractBaseTest {
 
         JarTestType1 createInstance;
 
-        public JarTestType1 createProviderInstance(Class<JarTestType1> clazz, String name) throws PluginException,
+        public <X extends JarTestType1> JarTestType1 createProviderInstance(Class<X> clazz, String name) throws PluginException,
             ProviderCreationException {
             return createInstance;
         }

@@ -25,10 +25,13 @@
 
 package com.dtolabs.rundeck.core.tasks.net;
 
+import com.dtolabs.rundeck.core.utils.SSHAgentProcess;
+import com.dtolabs.rundeck.plugins.PluginLogger;
 import com.jcraft.jsch.*;
 import org.apache.tools.ant.BuildException;
 import org.apache.tools.ant.Project;
 import org.apache.tools.ant.taskdefs.optional.ssh.SSHBase;
+import org.apache.tools.ant.taskdefs.optional.ssh.SSHUserInfo;
 import org.apache.tools.ant.types.Environment;
 import org.apache.tools.ant.types.Resource;
 import org.apache.tools.ant.types.resources.FileResource;
@@ -39,12 +42,13 @@ import org.apache.tools.ant.util.TeeOutputStream;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Executes a command on a remote machine via ssh.
  * @since     Ant 1.6 (created February 2, 2003)
  */
-public class ExtSSHExec extends SSHBase {
+public class ExtSSHExec extends SSHBase implements SSHTaskBuilder.SSHExecInterface {
 
     private static final int BUFFER_SIZE = 8192;
     private static final int RETRY_INTERVAL = 500;
@@ -66,9 +70,14 @@ public class ExtSSHExec extends SSHBase {
     private InputStream inputStream=null;
     private OutputStream secondaryStream=null;
     private DisconnectHolder disconnectHolder=null;
+    private PluginLogger logger;
 
     private Resource commandResource = null;
     private List<Environment.Variable> envVars=null;
+    
+    private Boolean enableSSHAgent=false;
+    private Integer ttlSSHAgent=0;
+    private SSHAgentProcess sshAgentProcess=null;
 
     private static final String TIMEOUT_MESSAGE =
         "Timeout period exceeded, connection dropped.";
@@ -108,6 +117,9 @@ public class ExtSSHExec extends SSHBase {
     public void setTimeout(long timeout) {
         maxwait = timeout;
     }
+    public long getTimeout(){
+        return maxwait;
+    }
 
     /**
      * If used, stores the output of the command to the given file.
@@ -133,7 +145,7 @@ public class ExtSSHExec extends SSHBase {
      * @param inputProperty  The property which contains the input data for the remote command.
      */
     public void setInputProperty(String inputProperty) {
-    	this.inputProperty = inputProperty;
+        this.inputProperty = inputProperty;
     }
 
     /**
@@ -170,10 +182,11 @@ public class ExtSSHExec extends SSHBase {
 
     private int exitStatus =-1;
     /**
-     * Return exitStatus of the remote execution, after it has finished or failed.
+     * @return exitStatus of the remote execution, after it has finished or failed.
      * The return value prior to retrieving the result will be -1. If that value is returned
      * after the task has executed, it indicates that an exception was thrown prior to retrieval
      * of the value.
+     *
      */
     public int getExitStatus(){
         return exitStatus;
@@ -190,7 +203,7 @@ public class ExtSSHExec extends SSHBase {
     }
 
     /**
-     * Return the disconnectHolder
+     * @return the disconnectHolder
      */
     public DisconnectHolder getDisconnectHolder() {
         return disconnectHolder;
@@ -198,9 +211,42 @@ public class ExtSSHExec extends SSHBase {
 
     /**
      * Set a disconnectHolder
+     * @param disconnectHolder holder
      */
     public void setDisconnectHolder(final DisconnectHolder disconnectHolder) {
         this.disconnectHolder = disconnectHolder;
+    }
+
+    public PluginLogger getPluginLogger() {
+        return logger;
+    }
+
+    public void setPluginLogger(PluginLogger logger) {
+        this.logger = logger;
+    }
+
+    public int getAntLogLevel() {
+        return antLogLevel;
+    }
+
+    public void setAntLogLevel(int antLogLevel) {
+        this.antLogLevel = antLogLevel;
+    }
+
+    public Map<String, String> getSshConfig() {
+        return sshConfig;
+    }
+
+    public InputStream getSshKeyData() {
+        return sshKeyData;
+    }
+
+    public SSHAgentProcess getSSHAgentProcess() {
+        return this.sshAgentProcess;
+    }
+
+    public void setSSHAgentProcess(SSHAgentProcess sshAgentProcess) {
+        this.sshAgentProcess = sshAgentProcess;
     }
 
     /**
@@ -219,6 +265,7 @@ public class ExtSSHExec extends SSHBase {
     public static interface DisconnectHolder{
         /**
          * Set disconnectable
+         * @param disconnectable disconnectable
          */
         public void setDisconnectable(Disconnectable disconnectable);
     }
@@ -236,7 +283,8 @@ public class ExtSSHExec extends SSHBase {
             throw new BuildException("Username is required.");
         }
         if (getUserInfo().getKeyfile() == null
-            && getUserInfo().getPassword() == null) {
+            && getUserInfo().getPassword() == null
+            && getSshKeyData() == null) {
             throw new BuildException("Password or Keyfile is required.");
         }
         if (command == null && commandResource == null) {
@@ -296,6 +344,13 @@ public class ExtSSHExec extends SSHBase {
                 log("Caught exception: " + e.getMessage(), Project.MSG_ERR);
             }
         } finally {
+            try {
+                if (null != this.sshAgentProcess) {
+                    this.sshAgentProcess.stopAgent();
+                }
+            } catch (IOException e) {
+                log( "Caught exception: " + e.getMessage(), Project.MSG_ERR);
+            }
             if (outputProperty != null) {
                 getProject().setNewProperty(outputProperty, output.toString());
             }
@@ -346,7 +401,7 @@ public class ExtSSHExec extends SSHBase {
             String inputData = getProject().getProperty(inputProperty) ;
             if (inputData != null) {
                 istream = new ByteArrayInputStream(inputData.getBytes()) ;
-            }        	
+            }
         }
 
         if(getInputStream()!=null){
@@ -358,6 +413,10 @@ public class ExtSSHExec extends SSHBase {
             session.setTimeout((int) maxwait);
             /* execute the command */
             channel = (ChannelExec) session.openChannel("exec");
+            if(null != this.sshAgentProcess){
+                channel.setAgentForwarding(true);
+            }
+            
             channel.setCommand(cmd);
             channel.setOutputStream(tee);
             channel.setExtOutputStream(new KeepAliveOutputStream(System.err), true);
@@ -459,7 +518,7 @@ public class ExtSSHExec extends SSHBase {
      * @param from           string to write
      * @param to             file to write to
      * @param append         if true, append to existing file, else overwrite
-     * @exception Exception  most likely an IOException
+     * @exception IOException on io error
      */
     private void writeToFile(String from, boolean append, File to)
         throws IOException {
@@ -487,6 +546,12 @@ public class ExtSSHExec extends SSHBase {
 
     private String knownHosts;
 
+    private InputStream sshKeyData;
+    @Override
+    public void setSshKeyData(InputStream sshKeyData) {
+        this.sshKeyData=sshKeyData;
+    }
+
     /**
      * Sets the path to the file that has the identities of
      * all known hosts.  This is used by SSH protocol to validate
@@ -500,6 +565,12 @@ public class ExtSSHExec extends SSHBase {
         super.setKnownhosts(knownHosts);
     }
 
+    private Map<String,String> sshConfig;
+    @Override
+    public void setSshConfig(Map<String, String> config) {
+        this.sshConfig=config;
+    }
+
 
     /**
      * Open an ssh seession.
@@ -509,39 +580,10 @@ public class ExtSSHExec extends SSHBase {
      * @throws JSchException on error
      */
     protected Session openSession() throws JSchException {
-        JSch jsch = new JSch();
-        final SSHBase base = this;
-        if(getVerbose()) {
-        	JSch.setLogger(new com.jcraft.jsch.Logger(){
-        		public boolean isEnabled(int level){
-        			return true;
-        		}
-        		public void log(int level, String message){
-        			base.log(message, Project.MSG_INFO);
-        		}
-        	});
-        }
-        if (null != getUserInfo().getKeyfile()) {
-            jsch.addIdentity(getUserInfo().getKeyfile());
-        }
-
-        if (!getUserInfo().getTrust() && knownHosts != null) {
-            log("Using known hosts: " + knownHosts, Project.MSG_DEBUG);
-            jsch.setKnownHosts(knownHosts);
-        }
-
-        Session session = jsch.getSession(getUserInfo().getName(), getHost(), getPort());
-        session.setTimeout( (int) maxwait);
-         if (getVerbose()) {
-            log("Set timeout to " + maxwait);
-        }
-        session.setUserInfo(getUserInfo());
-        if (getVerbose()) {
-            log("Connecting to " + getHost() + ":" + getPort());
-        }
-        session.connect();
-        return session;
+        return SSHTaskBuilder.openSession(this);
     }
+
+    private int antLogLevel=Project.MSG_INFO;
 
     public InputStream getInputStream() {
         return inputStream;
@@ -549,6 +591,7 @@ public class ExtSSHExec extends SSHBase {
 
     /**
      * Set an inputstream for pty input to the session
+     * @param inputStream  stream
      */
     public void setInputStream(final InputStream inputStream) {
         this.inputStream = inputStream;
@@ -560,8 +603,43 @@ public class ExtSSHExec extends SSHBase {
 
     /**
      * Set a secondary outputstream to read from the connection
+     * @param secondaryStream secondary stream
      */
     public void setSecondaryStream(final OutputStream secondaryStream) {
         this.secondaryStream = secondaryStream;
+    }
+
+    @Override
+    public String getKeyfile() {
+        return getUserInfo().getKeyfile();
+    }
+
+    @Override
+    public String getKnownhosts() {
+        return knownHosts;
+    }
+
+    public SSHUserInfo getUserInfo(){
+        return super.getUserInfo();
+    }
+
+    @Override
+    public void setEnableSSHAgent(Boolean enableSSHAgent) {
+        this.enableSSHAgent = enableSSHAgent;
+    }
+
+    @Override
+    public Boolean getEnableSSHAgent() {
+        return this.enableSSHAgent;
+    }
+
+    @Override
+    public void setTtlSSHAgent(Integer ttlSSHAgent) {
+        this.ttlSSHAgent = ttlSSHAgent;
+    }
+
+    @Override
+    public Integer getTtlSSHAgent() {
+      return this.ttlSSHAgent;
     }
 }

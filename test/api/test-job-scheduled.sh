@@ -23,7 +23,14 @@ xmlproj=$($XMLSTARLET esc "$project")
 xmlhost=$($XMLSTARLET esc $(hostname))
 
 #determine h:m:s to run, 10 seconds from now
-NDATE=$(date -v '+10S' '+%Y %m %d %H %M %S')
+NDATES=$(date '+%s')
+NDATES=$(( $NDATES + 10 ))
+osname=$(uname)
+if [ "Darwin" = "$osname" ] ; then
+  NDATE=$(date -r "$NDATES" '+%Y %m %d %H %M %S')
+else
+  NDATE=$(date --date="@$NDATES" '+%Y %m %d %H %M %S')
+fi
 NY=$(echo $NDATE | cut -f 1 -d ' ')
 NMO=$(echo $NDATE | cut -f 2 -d ' ')
 ND=$(echo $NDATE | cut -f 3 -d ' ')
@@ -64,7 +71,7 @@ cat > $DIR/temp.out <<END
 END
 
 # now submit req
-runurl="${APIURL}/jobs/import"
+runurl="${APIURL}/project/$project/jobs/import"
 
 params="dupeOption=update"
 
@@ -78,7 +85,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #result will contain list of failed and succeeded jobs, in this
 #case there should only be 1 failed or 1 succeeded since we submit only 1
@@ -87,8 +94,9 @@ succount=$($XMLSTARLET sel -T -t -v "/result/succeeded/@count" $DIR/curl.out)
 jobid=$($XMLSTARLET sel -T -t -v "/result/succeeded/job/id" $DIR/curl.out)
 
 if [ "1" != "$succount" -o "" == "$jobid" ] ; then
-    errorMsg  "Upload was not successful."
-    exit 
+    errorMsg  "Upload job, success count expected 1, saw $succount."
+    cat $DIR/curl.out
+    exit 2
 fi
 
 ###
@@ -106,7 +114,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #result will contain list of failed and succeeded jobs, in this
 #case there should only be 1 failed or 1 succeeded since we submit only 1
@@ -133,7 +141,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #result will contain list of failed and succeeded jobs, in this
 #case there should only be 1 failed or 1 succeeded since we submit only 1

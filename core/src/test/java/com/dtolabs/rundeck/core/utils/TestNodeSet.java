@@ -25,11 +25,12 @@ package com.dtolabs.rundeck.core.utils;
 
 
 import com.dtolabs.rundeck.core.common.NodeEntryImpl;
+import junit.framework.Assert;
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
-import org.apache.tools.ant.BuildException;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -97,7 +98,122 @@ public class TestNodeSet extends TestCase {
         junit.textui.TestRunner.run(suite());
     }
 
+    public static void assertFilterMap(Map<String, String> expectInclude, Map<String, String> expectExclude,
+            Map<String, Map<String, String>> result) {
+        Map<String, String> resultInclude = result.get("include");
+        Map<String, String> resultExclude = result.get("exclude");
 
+        assertNotNull(resultInclude);
+        assertNotNull(resultExclude);
+        if(null!=expectInclude){
+            assertEquals("wrong include size: "+ expectInclude,expectInclude.size(), resultInclude.size());
+            for (String s : expectInclude.keySet()) {
+                assertNotNull("expected non-null for "+s + "( "+result+" )", resultInclude.get(s));
+                assertEquals("expected value for " + s +": "+ expectInclude.get(s) + "( " + result + " )", expectInclude.get(s), resultInclude.get(s));
+            }
+        }else{
+            assertEquals(0, resultInclude.size());
+        }
+        if (null != expectExclude) {
+            assertEquals("wrong exclude size: " + expectExclude,expectExclude.size(), resultExclude.size());
+            for (String s : expectExclude.keySet()) {
+                assertNotNull("expected non-null for " + s + "( " + result + " )", resultExclude.get(s));
+                assertEquals("expected value for " + s + ": " + expectExclude.get(s) + "( " + result + " )", expectExclude.get(s),
+                        resultExclude.get(s));
+            }
+        } else {
+            assertEquals(0, resultExclude.size());
+        }
+
+    }
+    public void testParseFilterBasic() {
+        HashMap<String, String> expect = new HashMap<String, String>();
+        expect.put("tags", "xyz");
+        assertFilterMap(expect, null, NodeSet.parseFilter("tags: xyz"));
+    }
+    public void testParseFilterDefaultKey() {
+        HashMap<String, String> expect = new HashMap<String, String>();
+        expect.put("name", "xyz");
+        assertFilterMap(expect, null, NodeSet.parseFilter("xyz"));
+    }
+    public void testParseFilterJoinMultiDefaultKey() {
+        HashMap<String, String> expect = new HashMap<String, String>();
+        expect.put("name", "xyz,abc");
+        assertFilterMap(expect, null, NodeSet.parseFilter("xyz abc"));
+    }
+    public void testParseFilterJoinMultiKey() {
+        HashMap<String, String> expect = new HashMap<String, String>();
+        expect.put("tags", "xyz,abc");
+        assertFilterMap(expect, null, NodeSet.parseFilter("tags:xyz tags:abc"));
+    }
+    public void testParseFilterMultiInclude() {
+        HashMap<String, String> expect = new HashMap<String, String>();
+        expect.put("tags", "xyz");
+        expect.put("name", "monkey toe");
+        assertFilterMap(expect, null, NodeSet.parseFilter("tags: xyz  name: 'monkey toe'"));
+    }
+    public void testParseFilterNoSpace() {
+        HashMap<String, String> expect = new HashMap<String, String>();
+        expect.put("tags", "xyz");
+        assertFilterMap(expect, null, NodeSet.parseFilter("tags:xyz"));
+    }
+    public void testParseFilterBasicExclude() {
+        HashMap<String, String> expect = new HashMap<String, String>();
+        expect.put("tags", "xyz");
+        assertFilterMap(null, expect, NodeSet.parseFilter("!tags: xyz"));
+    }
+    public void testParseFilterMultiExclude() {
+        HashMap<String, String> expect = new HashMap<String, String>();
+        expect.put("tags", "xyz");
+        expect.put("name", "macaroon brigade");
+        assertFilterMap(null, expect, NodeSet.parseFilter("!tags: xyz !name: 'macaroon brigade' "));
+    }
+    public void testParseFilterBasicExcludeNoSpace() {
+        HashMap<String, String> expect = new HashMap<String, String>();
+        expect.put("tags", "xyz");
+        assertFilterMap(null, expect, NodeSet.parseFilter("!tags:xyz"));
+    }
+
+    public void testParseFilterMultiMixed() {
+        HashMap<String, String> expect = new HashMap<String, String>();
+        HashMap<String, String> expectX = new HashMap<String, String>();
+        expect.put("tags", "xyz,vwz");
+        expectX.put("name", "macaroon brigade");
+        assertFilterMap(expect, expectX, NodeSet.parseFilter("tags: xyz,vwz !name: 'macaroon brigade' "));
+    }
+
+    public void testParseFilterMultiMixedIgnoreSpaces() {
+        HashMap<String, String> expect = new HashMap<String, String>();
+        HashMap<String, String> expectX = new HashMap<String, String>();
+        expect.put("tags", "xyz,vwz");
+        expectX.put("name", "macaroon brigade");
+        assertFilterMap(expect, expectX, NodeSet.parseFilter("    tags:   xyz,vwz  !name:    \"macaroon brigade\""));
+    }
+    public void testParseFilterMultiMixedIgnoreTabs() {
+        HashMap<String, String> expect = new HashMap<String, String>();
+        HashMap<String, String> expectX = new HashMap<String, String>();
+        expectX.put("cloud.display_name", "Rackspace Open Cloud - Chicago");
+        expectX.put("cloud.xyz", "monkeyfill");
+        assertFilterMap(expect, expectX, NodeSet.parseFilter("!cloud.display_name:\t 'Rackspace Open Cloud - Chicago' !cloud.xyz:\r\n 'monkeyfill'"));
+    }
+    public void testParseFilterQuotedKeyValue() {
+        HashMap<String, String> expect = new HashMap<String, String>();
+        HashMap<String, String> expectX = new HashMap<String, String>();
+        expectX.put("test", "money pants");
+        assertFilterMap(expect, expectX, NodeSet.parseFilter(" '!test:money pants'  "));
+    }
+    public void testParseFilterQuotedKeyValueMultipleColon() {
+        HashMap<String, String> expect = new HashMap<String, String>();
+        HashMap<String, String> expectX = new HashMap<String, String>();
+        expectX.put("test", "xyz:money pants");
+        assertFilterMap(expect, expectX, NodeSet.parseFilter(" '!test:xyz:money pants'  "));
+    }
+
+    public void testParseFilterColonInKey() {
+        HashMap<String, String> expect = new HashMap<String, String>();
+        expect.put("as:test", "elf");
+        assertFilterMap(expect, null, NodeSet.parseFilter("as:test: elf"));
+    }
     public void testNodeSet() {
         set = new NodeSet();
         NodeSet.Exclude ex = set.createExclude();
@@ -109,13 +225,13 @@ public class TestNodeSet extends TestCase {
         try {
             set.createExclude();
             fail("createExclude should fail the second time");
-        } catch (BuildException e) {
+        } catch (IllegalStateException e) {
 
         }
         try {
             set.createInclude();
             fail("createInclude should fail the second time");
-        } catch (BuildException e) {
+        } catch (IllegalStateException e) {
 
         }
 
@@ -188,9 +304,7 @@ public class TestNodeSet extends TestCase {
         {
             set = new NodeSet();
             NodeSet.SetSelector sel = set.createInclude();
-            final NodeSet.Attribute attribute = sel.createAttribute();
-            attribute.setName("test1");
-            attribute.setValue("value1");
+            sel.getAttributesMap().put("test1", "value1");
             assertFalse("should not be blank", sel.isBlank());
             final Map<String, String> attributesMap = sel.getAttributesMap();
             assertNotNull("incorrect value", attributesMap);
@@ -198,11 +312,8 @@ public class TestNodeSet extends TestCase {
             assertEquals("incorrect size", 1, attributesMap.size());
             assertTrue("missing key", attributesMap.containsKey("test1"));
             assertEquals("wrong value", "value1", attributesMap.get("test1"));
-            sel.setAttributes(null);
             sel.setAttributesMap(null);
             assertTrue("should be blank", sel.isBlank());
-            assertNotNull("incorrect value", sel.getAttributesMap());
-            assertTrue("should be empty", sel.getAttributesMap().isEmpty());
         }
         //test setting attributesMap
         {
@@ -219,27 +330,17 @@ public class TestNodeSet extends TestCase {
             assertEquals("incorrect size", 1, attributesMap.size());
             assertTrue("missing key", attributesMap.containsKey("test1"));
             assertEquals("wrong value", "value1", attributesMap.get("test1"));
-            sel.setAttributes(null);
             sel.setAttributesMap(null);
             assertTrue("should be blank", sel.isBlank());
-            assertNotNull("incorrect value", sel.getAttributesMap());
-            assertTrue("should be empty", sel.getAttributesMap().isEmpty());
         }
         //test multiple attributes
         {
             set = new NodeSet();
             NodeSet.SetSelector sel = set.createInclude();
-            final NodeSet.Attribute attribute = sel.createAttribute();
-            attribute.setName("test1");
-            attribute.setValue("value1");
-            final NodeSet.Attribute attribute2 = sel.createAttribute();
-            attribute2.setName("test2");
-            attribute2.setValue("value2");
-            final NodeSet.Attribute attribute3 = sel.createAttribute();
-            attribute3.setName("test3");
-            attribute3.setValue("value3");
+            sel.getAttributesMap().put("test1", "value1");
+            sel.getAttributesMap().put("test2", "value2");
+            sel.getAttributesMap().put("test3", "value3");
             assertFalse("should not be blank", sel.isBlank());
-            sel.setAttributesMap(null);
             final Map<String, String> attributesMap = sel.getAttributesMap();
             assertNotNull("incorrect value", attributesMap);
             assertFalse("should not be empty", attributesMap.isEmpty());
@@ -250,18 +351,14 @@ public class TestNodeSet extends TestCase {
             assertEquals("wrong value", "value2", attributesMap.get("test2"));
             assertTrue("missing key", attributesMap.containsKey("test3"));
             assertEquals("wrong value", "value3", attributesMap.get("test3"));
-            sel.setAttributes(null);
             sel.setAttributesMap(null);
             assertTrue("should be blank", sel.isBlank());
-            assertNotNull("incorrect value", sel.getAttributesMap());
-            assertTrue("should be empty", sel.getAttributesMap().isEmpty());
         }
 
         //test included attributeSet with no matching imported attributes
         {
             set = new NodeSet();
             NodeSet.SetSelector sel = set.createInclude();
-            NodeSet.AttributeSet attset = sel.createAttributeSet();
             assertTrue("should be blank", sel.isBlank());
             final Map<String, String> attributesMap = sel.getAttributesMap();
             assertNotNull("incorrect value", attributesMap);
@@ -269,10 +366,74 @@ public class TestNodeSet extends TestCase {
             assertEquals("incorrect size", 0, attributesMap.size());
             assertFalse("missing key", attributesMap.containsKey("test1"));
             assertNull("wrong value", attributesMap.get("test1"));
-            sel.setAttributes(null);
         }
 
 
+    }
+    public void testPopulateSetSelector() throws Exception {
+        set = new NodeSet();
+        NodeSet.SetSelector sel = set.createInclude();
+        Map map = new HashMap();
+        map.put(NodeSet.NAME, "abc");
+        map.put(NodeSet.HOSTNAME, "hostname1");
+        map.put(NodeSet.OS_NAME, "osname1");
+        map.put(NodeSet.OS_ARCH, "osarch1");
+        map.put(NodeSet.OS_FAMILY, "osfam1");
+        map.put(NodeSet.OS_VERSION, "osvers1");
+        map.put(NodeSet.TAGS, "tags1");
+        map.put("anything", "anything1");
+        set.populateSetSelector(map, sel);
+        Assert.assertEquals("abc", sel.getName());
+        Assert.assertEquals("hostname1", sel.getHostname());
+        Assert.assertEquals("osname1", sel.getOsname());
+        Assert.assertEquals("osarch1", sel.getOsarch());
+        Assert.assertEquals("osfam1", sel.getOsfamily());
+        Assert.assertEquals("osvers1", sel.getOsversion());
+        Assert.assertEquals("tags1", sel.getTags());
+        Assert.assertEquals("anything1", sel.getAttributesMap().get("anything"));
+    }
+    public void testPopulateSetSelectorArrayValue() throws Exception {
+        set = new NodeSet();
+        NodeSet.SetSelector sel = set.createInclude();
+        Map map = new HashMap();
+        map.put(NodeSet.NAME, new String[]{"name1", "name2"});
+        map.put(NodeSet.OS_NAME, new String[]{"osname1", "osname2"});
+        map.put(NodeSet.TAGS, new String[]{"tag1", "tag2"});
+        map.put("anything", new String[]{"anything1", "anything2"});
+        set.populateSetSelector(map, sel);
+        Assert.assertEquals("name1,name2", sel.getName());
+        Assert.assertEquals("osname1,osname2", sel.getOsname());
+        Assert.assertEquals("tag1,tag2", sel.getTags());
+        Assert.assertEquals("anything1,anything2", sel.getAttributesMap().get("anything"));
+    }
+    public void testPopulateSetSelectorCollectionValue() throws Exception {
+        set = new NodeSet();
+        NodeSet.SetSelector sel = set.createInclude();
+        Map map = new HashMap();
+        map.put(NodeSet.NAME, 1L);
+        map.put(NodeSet.OS_NAME, new Object(){
+            @Override
+            public String toString() {
+                return "osname1";
+            }
+        });
+        set.populateSetSelector(map, sel);
+        Assert.assertEquals("1", sel.getName());
+        Assert.assertEquals("osname1", sel.getOsname());
+    }
+    public void testPopulateSetSelectorObjectValue() throws Exception {
+        set = new NodeSet();
+        NodeSet.SetSelector sel = set.createInclude();
+        Map map = new HashMap();
+        map.put(NodeSet.NAME, Arrays.asList("name1", "name2"));
+        map.put(NodeSet.OS_NAME, Arrays.asList("osname1","osname2"));
+        map.put(NodeSet.TAGS, Arrays.asList("tag1", "tag2"));
+        map.put("anything", Arrays.asList("anything1", "anything2"));
+        set.populateSetSelector(map, sel);
+        Assert.assertEquals("name1,name2", sel.getName());
+        Assert.assertEquals("osname1,osname2", sel.getOsname());
+        Assert.assertEquals("tag1,tag2", sel.getTags());
+        Assert.assertEquals("anything1,anything2", sel.getAttributesMap().get("anything"));
     }
 
     public void testMatchesInputMap() throws Exception {
@@ -1018,65 +1179,46 @@ public class TestNodeSet extends TestCase {
             set = new NodeSet();
             NodeSet.SetSelector inc = set.createInclude();
             NodeSet.SetSelector exc = set.createExclude();
-            final NodeSet.Attribute attribute = inc.createAttribute();
-            attribute.setName("testattribute1");
-            attribute.setValue("testvalue1");
+            inc.getAttributesMap().put("testattribute1", "testvalue1");
             assertTrue(set.shouldExclude(nodeimp1));
             assertFalse(set.shouldExclude(nodeimp2));
             assertFalse(set.shouldExclude(nodeimp3));
 
-            inc.setAttributesMap(null);
-            exc.setAttributesMap(null);
-            attribute.setValue("testvalue2");
+            inc.getAttributesMap().put("testattribute1", "testvalue2");
             assertTrue(set.shouldExclude(nodeimp1));
             assertTrue(set.shouldExclude(nodeimp2));
             assertTrue(set.shouldExclude(nodeimp3));
 
-            inc.setAttributesMap(null);
-            exc.setAttributesMap(null);
-            attribute.setName("testattribute2");
-            attribute.setValue("testvalue2");
+            inc.getAttributesMap().remove("testattribute1");
+            inc.getAttributesMap().put("testattribute2", "testvalue2");
             assertTrue(set.shouldExclude(nodeimp1));
             assertFalse(set.shouldExclude(nodeimp2));
             assertTrue(set.shouldExclude(nodeimp3));
 
-            inc.setAttributesMap(null);
-            exc.setAttributesMap(null);
-            attribute.setName("testattribute2");
-            attribute.setValue("testvalue2redux");
+            inc.getAttributesMap().put("testattribute2", "testvalue2redux");
             assertTrue(set.shouldExclude(nodeimp1));
             assertTrue(set.shouldExclude(nodeimp2));
             assertFalse(set.shouldExclude(nodeimp3));
 
             //use list
-            inc.setAttributesMap(null);
-            exc.setAttributesMap(null);
-            attribute.setName("testattribute2");
-            attribute.setValue("testvalue2,testvalue2redux");
+            inc.getAttributesMap().put("testattribute2", "testvalue2,testvalue2redux");
             assertTrue(set.shouldExclude(nodeimp1));
             assertFalse(set.shouldExclude(nodeimp2));
             assertFalse(set.shouldExclude(nodeimp3));
 
-            inc.setAttributesMap(null);
-            exc.setAttributesMap(null);
-            attribute.setName("testattribute3");
-            attribute.setValue("testvalue3");
+            inc.getAttributesMap().remove("testattribute2");
+            inc.getAttributesMap().put("testattribute3", "testvalue3");
             assertTrue(set.shouldExclude(nodeimp1));
             assertFalse(set.shouldExclude(nodeimp2));
             assertTrue(set.shouldExclude(nodeimp3));
 
-            inc.setAttributesMap(null);
-            exc.setAttributesMap(null);
-            attribute.setName("testattribute3");
-            attribute.setValue("testvalue4");
+            inc.getAttributesMap().put("testattribute3", "testvalue4");
             assertTrue(set.shouldExclude(nodeimp1));
             assertTrue(set.shouldExclude(nodeimp2));
             assertTrue(set.shouldExclude(nodeimp3));
 
-            inc.setAttributesMap(null);
-            exc.setAttributesMap(null);
-            attribute.setName("testattribute4");
-            attribute.setValue("testvalue5");
+            inc.getAttributesMap().remove("testattribute3");
+            inc.getAttributesMap().put("testattribute4", "testvalue5");
             assertTrue(set.shouldExclude(nodeimp1));
             assertTrue(set.shouldExclude(nodeimp2));
             assertFalse(set.shouldExclude(nodeimp3));
@@ -1161,9 +1303,9 @@ public class TestNodeSet extends TestCase {
             NodeSet.SetSelector inc = set.createInclude();
             NodeSet.SetSelector exc = set.createExclude();
             inc.setTags("devenv");
-            final NodeSet.Attribute attribute = exc.createAttribute();
-            attribute.setName("testattribute1");
-            attribute.setValue("testvalue1");
+            exc.getAttributesMap().put("testattribute1", "testvalue1");
+//            attribute.setName("testattribute1");
+//            attribute.setValue("testvalue1");
             assertFalse(set.shouldExclude(nodeimp1));
             assertTrue(set.shouldExclude(nodeimp2));
             assertTrue(set.shouldExclude(nodeimp3));

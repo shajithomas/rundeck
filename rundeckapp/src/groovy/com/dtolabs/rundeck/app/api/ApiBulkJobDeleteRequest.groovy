@@ -1,5 +1,8 @@
 package com.dtolabs.rundeck.app.api
 
+import com.dtolabs.rundeck.core.common.FrameworkResource
+import grails.validation.Validateable
+
 /*
  * Copyright 2012 DTO Labs, Inc. (http://dtolabs.com)
  * 
@@ -24,7 +27,33 @@ package com.dtolabs.rundeck.app.api
  * Created: 9/25/12 5:57 PM
  * 
  */
+@Validateable
 class ApiBulkJobDeleteRequest {
+    public static final String IDLIST_REGEX = '^' + FrameworkResource.VALID_RESOURCE_NAME_CHARSET_REGEX + '(,' +
+            '' + FrameworkResource.VALID_RESOURCE_NAME_CHARSET_REGEX + ')*$'
     List<String> ids
     String idlist
+    String id
+    static constraints={
+        ids(nullable:true,validator: {val,obj->
+            def test = val.every{
+                it==~FrameworkResource.VALID_RESOURCE_NAME_REGEX
+            }
+            if(!test){
+                return false
+            }
+        })
+        idlist(nullable:true, matches: IDLIST_REGEX)
+        id(nullable:true, matches: FrameworkResource.VALID_RESOURCE_NAME_REGEX)
+    }
+    def Set<String> generateIdSet(){
+        def ids = new HashSet<String>()
+        if (this.ids) {
+            ids.addAll(this.ids)
+        }
+        if (idlist) {
+            ids.addAll(idlist.split(','))
+        }
+        ids
+    }
 }

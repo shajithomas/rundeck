@@ -16,11 +16,15 @@
 
 package com.dtolabs.rundeck.core.cli.project;
 
+import com.dtolabs.client.services.DispatcherConfig;
 import com.dtolabs.rundeck.core.Constants;
 import com.dtolabs.rundeck.core.cli.Action;
 import com.dtolabs.rundeck.core.cli.ActionMaker;
+import com.dtolabs.rundeck.core.cli.BaseTool;
 import com.dtolabs.rundeck.core.cli.CLITool;
-import com.dtolabs.rundeck.core.common.Framework;
+import com.dtolabs.rundeck.core.common.FrameworkFactory;
+import com.dtolabs.rundeck.core.dispatcher.CentralDispatcher;
+import com.dtolabs.rundeck.core.utils.IPropertyLookup;
 import org.apache.commons.cli.*;
 import org.apache.log4j.PropertyConfigurator;
 
@@ -71,39 +75,31 @@ public class ProjectTool implements ActionMaker, CLITool {
         //options.addOption("N", "nodeslist", true, "Path to arbitrary nodes.properties file");
     }
 
+    CentralDispatcher dispatcher;
+    IPropertyLookup frameworkProperties;
 
 
-    public ProjectTool() {
+    public ProjectTool(final DispatcherConfig config,final File baseDir) {
         /**
          * Initialize the log4j logger
          */
         PropertyConfigurator.configure(Constants.getLog4jPropertiesFile().getAbsolutePath());
-        framework = Framework.getInstance(Constants.getSystemBaseDir());
-        extraProperties=new Properties();
-    }
-
-    public ProjectTool(final File baseDir) {
-        /**
-         * Initialize the log4j logger
-         */
-        PropertyConfigurator.configure(new File(Constants.getLog4jProperties(baseDir.getAbsolutePath()))
-            .getAbsolutePath());
-        framework = Framework.getInstance(baseDir.getAbsolutePath());
+        frameworkProperties = FrameworkFactory.createFilesystemFramework(baseDir).getPropertyLookup();
+        dispatcher = FrameworkFactory.createDispatcher(config);
         extraProperties = new Properties();
     }
-    /**
-     * Reference to the framework instance
-     */
-    private final Framework framework ;
 
     /**
      * Creates an instance and executes {@link #run(String[])}.
      *
-     * @param args
-     * @throws Exception
+     * @param args args
+     * @throws Exception if an error occurs
      */
     public static void main(final String[] args) throws Exception {
-        final ProjectTool c = new ProjectTool();
+        final ProjectTool c = new ProjectTool(
+                BaseTool.createDefaultDispatcherConfig(),
+                new File(Constants.getSystemBaseDir())
+        );
         c.run(args);
     }
 
@@ -263,9 +259,9 @@ public class ProjectTool implements ActionMaker, CLITool {
     public Action createAction(final String actionName) {
         try {
             if (ACTION_CREATE.equals(actionName)) {
-                return new CreateAction(this, framework, cli, extraProperties);
+                return new CreateAction(this, frameworkProperties, cli, extraProperties,dispatcher);
             } else if (ACTION_REMOVE.equals(actionName)) {
-                return new RemoveAction(this, framework, cli);
+                return new RemoveAction(this, frameworkProperties, cli,dispatcher);
             } else {
                 throw new IllegalArgumentException("unknown action name: " + actionName);
             }

@@ -1,0 +1,100 @@
+/**
+ * The Rundeck Storage Encryption plugin build file
+ */
+
+ext.pluginClassNames='org.rundeck.plugin.encryption.JasyptEncryptionConverterPlugin'
+ext.pluginName = 'Jasypt Encryption Plugin'
+ext.pluginDescription = 'Encrypt contents of Storage resources'
+
+configurations{
+    pluginLibs
+
+    //declare compile to extend from pluginLibs so it inherits the dependencies
+    compile {
+        extendsFrom pluginLibs
+    }
+}
+repositories {
+    mavenLocal()
+    maven{ //snapshot dependency
+        url='https://oss.sonatype.org/content/repositories/snapshots/'
+    }
+    mavenCentral()
+}
+
+dependencies {
+    compile project(":core")
+    pluginLibs( [group: 'org.jasypt', name: 'jasypt', version: '1.9.2'],
+                [group: 'org.bouncycastle', name: 'bcprov-jdk15on', version: '1.51'])
+    testCompile(
+        //[group: 'junit', name: 'junit', version: '3.8.1',ext:'jar']
+    )
+}
+
+// task to copy plugin libs to output/lib dir
+task copyToLib(type: Copy) {
+    into "$buildDir/output/lib"
+    from configurations.pluginLibs
+}
+
+jar {
+    from "$buildDir/output"
+    manifest {
+        attributes 'Rundeck-Plugin-Classnames': pluginClassNames
+        attributes 'Rundeck-Plugin-Name': pluginName
+        attributes 'Rundeck-Plugin-Description': pluginDescription
+        def libList = configurations.pluginLibs.collect { 'lib/' + it.name }.join(' ')
+        attributes 'Rundeck-Plugin-Libs': "${libList}"
+    }
+}
+
+//set jar task to depend on copyToLib
+jar.dependsOn(copyToLib)
+
+apply plugin: 'maven'
+task createPom << {
+    pom {
+        project {
+            artifactId 'rundeck-jasypt-encryption-plugin'
+            groupId "org.rundeck.plugins"
+            inceptionYear '2014'
+            packaging 'jar'
+            version version
+            name( 'Rundeck '+pluginName)
+            url 'http://rundeck.org'
+            licenses {
+                license {
+                    name 'The Apache Software License, Version 2.0'
+                    url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    distribution 'repo'
+                }
+            }
+            parent{
+                groupId 'com.dtolabs.rundeck'
+                artifactId "rundeck-bundled-plugins"
+                version(version)
+            }
+            build{
+                plugins{
+                    plugin{
+                        groupId 'org.apache.maven.plugins'
+                        artifactId 'maven-jar-plugin'
+                        version '2.3.2'
+                        configuration{
+                            archive{
+                              manifestEntries{
+                                'Rundeck-Plugin-Classnames'(pluginClassNames)
+                                'Rundeck-Plugin-File-Version' version
+                                'Rundeck-Plugin-Version' rundeckPluginVersion
+                                'Rundeck-Plugin-Archive' 'true'
+                                'Rundeck-Plugin-Name' pluginName
+                                'Rundeck-Plugin-Description' pluginDescription
+                              }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }.writeTo("pom.xml")
+}

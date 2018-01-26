@@ -1,35 +1,22 @@
-allprojects{
-    version = '1.4.4-dev'
-    defaultTasks 'clean','assemble'
-    apply plugin: 'idea'
-    group  = 'com.dtolabs.rundeck'
-}
+/**
+ * The Rundeck Launch parent build file
+ */
+
+description = "The parent launcher project provides defaults for it's children"
+
+
+eclipse.project.name = "${project.getParent().eclipse.project.name}:launcher"
+
 subprojects{
-    apply plugin: 'java'
-    sourceCompatibility = 1.5
-    ext.jettyVersion='6.1.21'
-    repositories {
-        add(new org.apache.ivy.plugins.resolver.FileSystemResolver()) {
-            name = 'localdeps'
-            addArtifactPattern "$projectDir/../../dependencies/[module]/[ext]s/[module]-[revision](-[classifier]).[ext]"
-            addArtifactPattern "$projectDir/../../rundeckapp/target/[module]-[revision](-[classifier]).[ext]"
-            addArtifactPattern "$projectDir/../../plugins/script-plugin/build/libs/[module]-[revision](-[classifier]).[ext]"
-            addArtifactPattern "$projectDir/../../plugins/stub-plugin/build/libs/[module]-[revision](-[classifier]).[ext]"
-            descriptor = 'optional'
-            checkmodified = true
-        }
-    }
-}
-task wrapper(type: Wrapper) {
-    gradleVersion = '1.0'
+    defaultTasks 'clean','assemble'
+    ext.jettyVersion='7.6.0.v20120127'
 }
 
-apply plugin: 'maven'
 task createPom << {
     pom {
         project {
             artifactId 'rundeck-launcher-parent'
-            groupId "com.dtolabs.rundeck"
+            groupId project.group
             inceptionYear '2011'
             packaging 'pom'
             version version

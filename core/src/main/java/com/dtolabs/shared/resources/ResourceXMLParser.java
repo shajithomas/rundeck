@@ -36,17 +36,16 @@ import java.util.*;
 
 /**
  * ResourceXMLParser parses a resources.xml formatted file, and provides several interfaces for using the result data.
- * <p/>
+ * <br>
  * The {@link #parse()} method parses the configured File as a sequence of {@link com.dtolabs.shared.resources.ResourceXMLParser.Entity}
  * objects, one for each entry in the file.  It passes these objects to any configured {@link com.dtolabs.shared.resources.ResourceXMLReceiver}
  * object. One should be set using {@link
  * #setReceiver(ResourceXMLReceiver)} to receive parsed entities or the entire entity set.
- * <p/>
+ * <br>
  * The default entityXpath property value is set to match all entity types in the resource xml
  * <code>(node|setting|package|deployment)</code>, but this can be set to any Xpath to limit the entities that are
  * parsed from the document. (e.g. "<code>node|package</code>" or "<code>node[@name='mynode']</code>").
- * See {@link #setEntityXpath(String)}.
- * <p/>
+ * <br>
  *
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  * @version $Revision$
@@ -56,6 +55,7 @@ public class ResourceXMLParser {
 
     private File file;
     private InputStream input;
+    private Document doc;
     private ResourceXMLReceiver receiver;
     public static final String DEFAULT_ENTITY_XPATH = NODE_ENTITY_TAG ;
     private String entityXpath = DEFAULT_ENTITY_XPATH;
@@ -79,10 +79,20 @@ public class ResourceXMLParser {
 
 
     /**
+     * Constructor for the ResourceXMLParser
+     *
+     * @param doc     source document
+     */
+    public ResourceXMLParser(final Document doc) {
+        this.doc = doc;
+    }
+
+
+    /**
      * Parse the document, applying the configured Receiver to the parsed entities
      *
-     * @throws ResourceXMLParserException
-     * @throws FileNotFoundException
+     * @throws ResourceXMLParserException parse error
+     * @throws java.io.IOException io error
      */
     public void parse() throws ResourceXMLParserException, IOException {
         final EntityResolver resolver = createEntityResolver();
@@ -91,34 +101,40 @@ public class ResourceXMLParser {
 
         try {
 
-            final InputStream in;
-            if(null!=file){
-                in = new FileInputStream(file);
-            }else{
-                in = input;
-            }
-            try{
-                final Document doc = reader.read(in);
-                final EntitySet set = new EntitySet();
-                final Element root = doc.getRootElement();
-
-                final List list = root.selectNodes(entityXpath);
-                for (final Object n : list) {
-                    final Node node = (Node) n;
-                    final Entity ent = parseEnt(node, set);
-                    if (null != receiver) {
-                        if (!receiver.resourceParsed(ent)) {
-                            break;
-                        }
+            final Document doc;
+            if(null==this.doc){
+                final InputStream in;
+                if(null!=file){
+                    in = new FileInputStream(file);
+                }else{
+                    in = input;
+                }
+                try{
+                    doc=reader.read(in);
+                }finally{
+                    if(null!=file){
+                        in.close();
                     }
                 }
+            }else{
+                doc=this.doc;
+            }
+
+            final EntitySet set = new EntitySet();
+            final Element root = doc.getRootElement();
+
+            final List list = root.selectNodes(entityXpath);
+            for (final Object n : list) {
+                final Node node = (Node) n;
+                final Entity ent = parseEnt(node, set);
                 if (null != receiver) {
-                    receiver.resourcesParsed(set);
+                    if (!receiver.resourceParsed(ent)) {
+                        break;
+                    }
                 }
-            }finally{
-                if(null!=file){
-                    in.close();
-                }
+            }
+            if (null != receiver) {
+                receiver.resourcesParsed(set);
             }
 
         } catch (DocumentException e) {
@@ -334,14 +350,11 @@ public class ResourceXMLParser {
      * Represents a parsed resource entity in the xml, which consists of a name property, a type property, and a set of
      * name/value properties.  These property names correspond to the attribute names of the type of entity being
      * parsed.  See {@link com.dtolabs.shared.resources.ResourceXMLConstants} for property names.
-     * <p/>
-     * Entities also may have other entity "referrers" ({@link #getReferrers()}), and most entities may have "resources"
-     * ({@link #getResources()}).
-     * <p/>
+     * <br>
      * The specific entity declaration type (node,setting,package,deployment) can be found with the {@link
      * #getResourceType()} method. This method will return null if the entity is a resource-reference with no
      * corresponding entity definition in the XML.
-     * <p/>
+     * <br>
      * Two special properties, "resources.replace" and "referrers.replace" correspond to the values of the "replace"
      * attribute on any embedded resource/referrer references for the entity.
      */

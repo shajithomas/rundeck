@@ -24,20 +24,30 @@ package com.dtolabs.rundeck.core.cli;
 */
 
 
-import com.dtolabs.rundeck.core.CoreException;
-import com.dtolabs.rundeck.core.common.Framework;
-import com.dtolabs.rundeck.core.common.FrameworkProject;
-import com.dtolabs.rundeck.core.common.INodeEntry;
+import com.dtolabs.rundeck.core.common.*;
 import com.dtolabs.rundeck.core.dispatcher.*;
-import com.dtolabs.rundeck.core.execution.*;
-import com.dtolabs.rundeck.core.execution.commands.*;
-import com.dtolabs.rundeck.core.utils.NodeSet;
+import com.dtolabs.rundeck.core.execution.ExecutionContext;
+import com.dtolabs.rundeck.core.execution.ExecutionListener;
+import com.dtolabs.rundeck.core.execution.StepExecutionItem;
+import com.dtolabs.rundeck.core.execution.workflow.StepExecutionContext;
+import com.dtolabs.rundeck.core.execution.workflow.steps.node.NodeStepException;
+import com.dtolabs.rundeck.core.execution.workflow.steps.node.NodeStepExecutionItem;
+import com.dtolabs.rundeck.core.execution.workflow.steps.node.NodeStepExecutionService;
+import com.dtolabs.rundeck.core.execution.workflow.steps.node.NodeStepExecutor;
+import com.dtolabs.rundeck.core.execution.workflow.steps.node.NodeStepResult;
 import com.dtolabs.rundeck.core.tools.AbstractBaseTest;
 import com.dtolabs.rundeck.core.utils.FileUtils;
+import com.dtolabs.rundeck.core.utils.NodeSet;
 import junit.framework.Test;
 import junit.framework.TestSuite;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.util.*;
 
 public class TestExecTool extends AbstractBaseTest {
@@ -68,8 +78,10 @@ public class TestExecTool extends AbstractBaseTest {
 
     public void setUp() {
         super.setUp();
-        FrameworkProject d = getFrameworkInstance().getFrameworkProjectMgr().createFrameworkProject(
-            TEST_EXEC_TOOL_PROJECT);
+        FrameworkProject d = getFrameworkInstance().getFilesystemFrameworkProjectManager().createFSFrameworkProject(
+                TEST_EXEC_TOOL_PROJECT
+        );
+        assert d.getBaseDir().isDirectory();
         File projectEtcDir = new File(d.getBaseDir(), "etc");
         //copy test nodes xml file to test dir
         try {
@@ -85,25 +97,27 @@ public class TestExecTool extends AbstractBaseTest {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        FrameworkProject d2 = getFrameworkInstance().getFrameworkProjectMgr().createFrameworkProject(
+        IRundeckProject d2 = getFrameworkInstance().getFrameworkProjectMgr().createFrameworkProject(
             TEST_EXEC_TOOL_PROJ2);
 
     }
 
     public void tearDown() throws Exception {
         super.tearDown();
-        FrameworkProject d = getFrameworkInstance().getFrameworkProjectMgr().createFrameworkProject(
-            TEST_EXEC_TOOL_PROJECT);
+        FrameworkProject d = getFrameworkInstance().getFilesystemFrameworkProjectManager().createFSFrameworkProject(
+                TEST_EXEC_TOOL_PROJECT
+        );
         FileUtils.deleteDir(d.getBaseDir());
-        getFrameworkInstance().getFrameworkProjectMgr().remove(TEST_EXEC_TOOL_PROJECT);
-        FrameworkProject d2 = getFrameworkInstance().getFrameworkProjectMgr().createFrameworkProject(
-            TEST_EXEC_TOOL_PROJ2);
+        getFrameworkInstance().getFrameworkProjectMgr().removeFrameworkProject(TEST_EXEC_TOOL_PROJECT);
+        FrameworkProject d2 = getFrameworkInstance().getFilesystemFrameworkProjectManager().createFSFrameworkProject(
+                TEST_EXEC_TOOL_PROJ2
+        );
         FileUtils.deleteDir(d2.getBaseDir());
 
 
-        getFrameworkInstance().getFrameworkProjectMgr().remove(TEST_EXEC_TOOL_PROJ2);
+        getFrameworkInstance().getFrameworkProjectMgr().removeFrameworkProject(TEST_EXEC_TOOL_PROJ2);
 //        ExecutionServiceFactory.resetDefaultExecutorClasses();
-        getFrameworkInstance().setService(CommandInterpreterService.SERVICE_NAME, null);
+        getFrameworkInstance().setService(NodeStepExecutionService.SERVICE_NAME, null);
     }
 
     public static Test suite() {
@@ -115,11 +129,44 @@ public class TestExecTool extends AbstractBaseTest {
         junit.textui.TestRunner.run(suite());
     }
 
-    public void testParseArgs() throws Exception {
+    public void testParseArgsNoProject_multipleExist() throws Exception {
 
-        {
             //test missing -p option when multiple projects exist
             ExecTool main = newExecTool();
+        testCentralDispatcher centralDispatcher = new testCentralDispatcher();
+        centralDispatcher.projectNames = Arrays.asList("project1", "project2");
+        main.setCentralDispatcher(centralDispatcher);
+        try {
+                main.parseArgs(
+                    new String[]{"-K", "-C", "2", "-I", "hostname1", "-X", "tags=baloney", "-Q", "--", "shell",
+                        "command",
+                        "string"});
+                fail("should not complete");
+            } catch (IllegalArgumentException e) {
+                assertNotNull(e);
+                assertEquals("project parameter not specified", e.getMessage());
+            }
+    }
+    public void testParseArgsNoProject_singleExists() throws Exception {
+
+            //test missing -p option when multiple projects exist
+            ExecTool main = newExecTool();
+        testCentralDispatcher centralDispatcher = new testCentralDispatcher();
+        centralDispatcher.projectNames = Arrays.asList("project1");
+        main.setCentralDispatcher(centralDispatcher);
+
+        main.parseArgs(
+            new String[]{"-K", "-C", "2", "-I", "hostname1", "-X", "tags=baloney", "-Q", "--", "shell",
+                "command",
+                "string"});
+    }
+    public void testParseArgsNoProject_noneExists() throws Exception {
+
+            //test missing -p option when multiple projects exist
+            ExecTool main = newExecTool();
+        testCentralDispatcher centralDispatcher = new testCentralDispatcher();
+        centralDispatcher.projectNames = Arrays.asList();
+        main.setCentralDispatcher(centralDispatcher);
 
             try {
                 main.parseArgs(
@@ -131,7 +178,6 @@ public class TestExecTool extends AbstractBaseTest {
                 assertNotNull(e);
                 assertEquals("project parameter not specified", e.getMessage());
             }
-        }
     }
 
     public void testParseNodeDispatchArgs() throws Exception {
@@ -222,54 +268,97 @@ public class TestExecTool extends AbstractBaseTest {
         }
     }
 
-    public void testFilterNodes() {
-        {
-            ExecTool main = newExecTool();
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT});
-            Map exmap = main.parseExcludeArgs(nodeKeys);
-            Map incmap = main.parseIncludeArgs(nodeKeys);
-            final Collection c = main.filterNodes().getNodes();
-            assertEquals("wrong size", 4, c.size());
-        }
-        {
-            ExecTool main = newExecTool();
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-X", "homestar", "-I", "os-name=Testux"});
-            Map exmap = main.parseExcludeArgs(nodeKeys);
-            Map incmap = main.parseIncludeArgs(nodeKeys);
-            NodeSet nodeset = main.createNodeSet(incmap, exmap);
-            assertTrue(nodeset.getExclude().isDominant());
-            assertFalse(nodeset.getInclude().isDominant());
-            final Collection c = main.filterNodes().getNodes();
-            assertEquals("wrong size", 1, c.size());
-        }
+    public void testFilterNodesDefaultAll() throws CentralDispatcherException {
+        ExecTool main = newExecTool();
+        NodeSetImpl nodeSet = new NodeSetImpl();
+        nodeSet.putNode(new NodeEntryImpl("node1"));
+        nodeSet.putNode(new NodeEntryImpl("node2"));
+        nodeSet.putNode(new NodeEntryImpl("node3"));
+        nodeSet.putNode(new NodeEntryImpl("node4"));
 
-        {
-            ExecTool main = newExecTool();
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-X", "strongbad,homestar",
-                "-I", "os-family=fakeos"});
-            Map exmap = main.parseExcludeArgs(nodeKeys);
-            Map incmap = main.parseIncludeArgs(nodeKeys);
-            final Collection c = main.filterNodes().getNodes();
-            assertEquals("wrong size", 1, c.size());
-        }
+        testCentralDispatcher centralDispatcher = getFilterNodesDispatcher(main, nodeSet);
+
+        main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT});
+        Map exmap = main.parseExcludeArgs(nodeKeys);
+        Map incmap = main.parseIncludeArgs(nodeKeys);
+        final Collection c = main.filterNodes().getNodes();
+
+        assertEquals("wrong size", 4, c.size());
+        assertEquals(TEST_EXEC_TOOL_PROJECT, centralDispatcher.nodesProject);
+        assertEquals(".*", centralDispatcher.nodesFilter);
+    }
+
+    private testCentralDispatcher getFilterNodesDispatcher(
+            final ExecTool main,
+            final NodeSetImpl nodeSet
+    )
+    {
+        testCentralDispatcher centralDispatcher = new testCentralDispatcher();
+        centralDispatcher.hasFilteredNodes = true;
+        centralDispatcher.filteredNodes = nodeSet;
+        main.setCentralDispatcher(centralDispatcher);
+        return centralDispatcher;
+    }
+
+    public void testFilterNodesSimple1() throws CentralDispatcherException {
+        ExecTool main = newExecTool();
+        NodeSetImpl nodeSet = new NodeSetImpl();
+        nodeSet.putNode(new NodeEntryImpl("node1"));
+        testCentralDispatcher centralDispatcher = getFilterNodesDispatcher(main, nodeSet);
+        main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-X", "homestar", "-I", "os-name=Testux"});
+        Map exmap = main.parseExcludeArgs(nodeKeys);
+        Map incmap = main.parseIncludeArgs(nodeKeys);
+        NodeSet nodeset = main.createNodeSet(incmap, exmap);
+        assertTrue(nodeset.getExclude().isDominant());
+        assertFalse(nodeset.getInclude().isDominant());
+        final Collection c = main.filterNodes().getNodes();
+        assertEquals("wrong size", 1, c.size());
+        assertEquals(TEST_EXEC_TOOL_PROJECT, centralDispatcher.nodesProject);
+        assertEquals("osname: Testux !hostname: homestar", centralDispatcher.nodesFilter);
+    }
+
+    public void testFilterNodes3() throws CentralDispatcherException {
+        ExecTool main = newExecTool();
+        NodeSetImpl nodeSet = new NodeSetImpl();
+        nodeSet.putNode(new NodeEntryImpl("node1"));
+        testCentralDispatcher centralDispatcher = getFilterNodesDispatcher(main, nodeSet);
+        main.parseArgs(
+                new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-X", "strongbad,homestar",
+                        "-I", "os-family=fakeos"}
+        );
+        Map exmap = main.parseExcludeArgs(nodeKeys);
+        Map incmap = main.parseIncludeArgs(nodeKeys);
+        final Collection c = main.filterNodes().getNodes();
+        assertEquals("wrong size", 1, c.size());
+        assertEquals(TEST_EXEC_TOOL_PROJECT, centralDispatcher.nodesProject);
+        assertEquals("osfamily: fakeos !hostname: strongbad,homestar", centralDispatcher.nodesFilter);
     }
 
 
 
-    public void testDefaultNodeFormatter() {
-        {
+    public void testDefaultNodeFormatter() throws CentralDispatcherException {
             ExecTool main = newExecTool();
             main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT});
             Map exmap = main.parseExcludeArgs(nodeKeys);
             Map incmap = main.parseIncludeArgs(nodeKeys);
+        NodeSetImpl nodeSet = new NodeSetImpl();
+        nodeSet.putNode(new NodeEntryImpl("cheat"));
+        nodeSet.putNode(new NodeEntryImpl("homestar"));
+        nodeSet.putNode(new NodeEntryImpl("strongbad"));
+        nodeSet.putNode(new NodeEntryImpl("test1"));
+        testCentralDispatcher centralDispatcher = getFilterNodesDispatcher(main, nodeSet);
             final Collection c = main.filterNodes().getNodes();
             final String result = new ExecTool.DefaultNodeFormatter().formatResults(c).toString();
-            System.out.println("TEST-DEBUG: result='" + result + "'");
             assertNotNull(result);
             assertEquals("doesn't contain correct result", "cheat homestar strongbad test1", result);
+        assertEquals(TEST_EXEC_TOOL_PROJECT,centralDispatcher.nodesProject);
+        assertEquals(".*",centralDispatcher.nodesFilter);
         }
-        {
+    public void testDefaultNodeFormatter2() throws CentralDispatcherException {
             ExecTool main = newExecTool();
+        NodeSetImpl nodeSet = new NodeSetImpl();
+        nodeSet.putNode(new NodeEntryImpl("cheat"));
+        testCentralDispatcher centralDispatcher = getFilterNodesDispatcher(main, nodeSet);
             main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-X", "homestar", "-I", "os-name=Testux"});
             Map exmap = main.parseExcludeArgs(nodeKeys);
             Map incmap = main.parseIncludeArgs(nodeKeys);
@@ -281,10 +370,15 @@ public class TestExecTool extends AbstractBaseTest {
             final String result = new ExecTool.DefaultNodeFormatter().formatResults(c).toString();
             assertNotNull(result);
             assertEquals("doesn't contain correct result", "cheat", result);
+        assertEquals(TEST_EXEC_TOOL_PROJECT,centralDispatcher.nodesProject);
+        assertEquals("osname: Testux !hostname: homestar",centralDispatcher.nodesFilter);
         }
 
-        {
+    public void testDefaultNodeFormatter3() throws CentralDispatcherException {
             ExecTool main = newExecTool();
+        NodeSetImpl nodeSet = new NodeSetImpl();
+        nodeSet.putNode(new NodeEntryImpl("cheat"));
+        testCentralDispatcher centralDispatcher = getFilterNodesDispatcher(main, nodeSet);
             main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-X", "strongbad,homestar",
                 "-I", "os-family=fakeos"});
             Map exmap = main.parseExcludeArgs(nodeKeys);
@@ -294,7 +388,8 @@ public class TestExecTool extends AbstractBaseTest {
             final String result = new ExecTool.DefaultNodeFormatter().formatResults(c).toString();
             assertNotNull(result);
             assertEquals("doesn't contain correct result", "cheat", result);
-        }
+        assertEquals(TEST_EXEC_TOOL_PROJECT,centralDispatcher.nodesProject);
+        assertEquals("osfamily: fakeos !hostname: strongbad,homestar",centralDispatcher.nodesFilter);
     }
 
     static class TestFormatter implements ExecTool.NodeFormatter{
@@ -304,52 +399,71 @@ public class TestExecTool extends AbstractBaseTest {
             return new StringBuffer();
         }
     }
-    public void testListAction() {
-        {
-            ExecTool main = newExecTool();
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-v"});
-            Map exmap = main.parseExcludeArgs(nodeKeys);
-            Map incmap = main.parseIncludeArgs(nodeKeys);
-            final Collection c = main.filterNodes().getNodes();
-            final TestFormatter formatter = new TestFormatter();
-            main.setNodeFormatter(formatter);
-            main.listAction();
-            assertNotNull(formatter.nodes);
-            assertEquals(4, formatter.nodes.size());
-        }
-        {
-            ExecTool main = newExecTool();
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-v", "-X", "homestar", "-I", "os-name=Testux"});
-            Map exmap = main.parseExcludeArgs(nodeKeys);
-            Map incmap = main.parseIncludeArgs(nodeKeys);
-            NodeSet nodeset = main.createNodeSet(incmap, exmap);
-            assertTrue(nodeset.getExclude().isDominant());
-            assertFalse(nodeset.getInclude().isDominant());
-            final Collection c = main.filterNodes().getNodes();
-            final TestFormatter formatter = new TestFormatter();
-            main.setNodeFormatter(formatter);
-            main.listAction();
-            assertNotNull(formatter.nodes);
-            assertEquals(1, formatter.nodes.size());
-        }
 
-        {
-            ExecTool main = newExecTool();
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-v", "-X", "strongbad,homestar",
-                "-I", "os-family=fakeos"});
-            Map exmap = main.parseExcludeArgs(nodeKeys);
-            Map incmap = main.parseIncludeArgs(nodeKeys);
-            final Collection c = main.filterNodes().getNodes();
-            final TestFormatter formatter = new TestFormatter();
-            main.setNodeFormatter(formatter);
-            main.listAction();
-            assertNotNull(formatter.nodes);
-            assertEquals(1, formatter.nodes.size());
-        }
+    public void testListActionAll() throws CentralDispatcherException {
+        ExecTool main = newExecTool();
+        NodeSetImpl nodeSet = new NodeSetImpl();
+        nodeSet.putNode(new NodeEntryImpl("node1"));
+        nodeSet.putNode(new NodeEntryImpl("node2"));
+        nodeSet.putNode(new NodeEntryImpl("node3"));
+        nodeSet.putNode(new NodeEntryImpl("node4"));
+        testCentralDispatcher centralDispatcher = getFilterNodesDispatcher(main, nodeSet);
+        main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-v"});
+        Map exmap = main.parseExcludeArgs(nodeKeys);
+        Map incmap = main.parseIncludeArgs(nodeKeys);
+        final Collection c = main.filterNodes().getNodes();
+        final TestFormatter formatter = new TestFormatter();
+        main.setNodeFormatter(formatter);
+        main.listAction();
+        assertNotNull(formatter.nodes);
+        assertEquals(4, formatter.nodes.size());
+    }
+
+    public void testListActionFiltered1() throws CentralDispatcherException {
+        ExecTool main = newExecTool();
+        NodeSetImpl nodeSet = new NodeSetImpl();
+        nodeSet.putNode(new NodeEntryImpl("node1"));
+        testCentralDispatcher centralDispatcher = getFilterNodesDispatcher(main, nodeSet);
+        main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-v", "-X", "homestar", "-I", "os-name=Testux"});
+        Map exmap = main.parseExcludeArgs(nodeKeys);
+        Map incmap = main.parseIncludeArgs(nodeKeys);
+        NodeSet nodeset = main.createNodeSet(incmap, exmap);
+        assertTrue(nodeset.getExclude().isDominant());
+        assertFalse(nodeset.getInclude().isDominant());
+        final Collection c = main.filterNodes().getNodes();
+        final TestFormatter formatter = new TestFormatter();
+        main.setNodeFormatter(formatter);
+        main.listAction();
+        assertNotNull(formatter.nodes);
+        assertEquals(1, formatter.nodes.size());
+        assertEquals(TEST_EXEC_TOOL_PROJECT, centralDispatcher.nodesProject);
+        assertEquals("osname: Testux !hostname: homestar", centralDispatcher.nodesFilter);
+    }
+
+    public void testListAction3() throws CentralDispatcherException {
+        ExecTool main = newExecTool();
+        NodeSetImpl nodeSet = new NodeSetImpl();
+        nodeSet.putNode(new NodeEntryImpl("node1"));
+        testCentralDispatcher centralDispatcher = getFilterNodesDispatcher(main, nodeSet);
+
+        main.parseArgs(
+                new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-v", "-X", "strongbad,homestar",
+                        "-I", "os-family=fakeos"}
+        );
+        Map exmap = main.parseExcludeArgs(nodeKeys);
+        Map incmap = main.parseIncludeArgs(nodeKeys);
+        final Collection c = main.filterNodes().getNodes();
+        final TestFormatter formatter = new TestFormatter();
+        main.setNodeFormatter(formatter);
+        main.listAction();
+        assertNotNull(formatter.nodes);
+        assertEquals(1, formatter.nodes.size());
+        assertEquals(TEST_EXEC_TOOL_PROJECT, centralDispatcher.nodesProject);
+        assertEquals("osfamily: fakeos !hostname: strongbad,homestar", centralDispatcher.nodesFilter);
     }
 
     private ExecTool newExecTool() {
-        return new ExecTool(getFrameworkInstance());
+        return new ExecTool(BaseTool.createDefaultDispatcherConfig());
     }
 
 
@@ -393,429 +507,6 @@ public class TestExecTool extends AbstractBaseTest {
         }
     }*/
 
-    /**
-     * Stub to set as Executor class for ExecutionItem types, used for testing.
-     */
-    /*public static class testExecutor1 implements Executor {
-        static ExecutionItem testItem;
-        static ExecutionListener testListener;
-        static boolean executeItemCalled=false;
-        static Framework testFramework;
-        static ExecutionResult returnResult=null;
-        static ExecutionService testExecutionService;
-        public testExecutor1() {
-        }
-        public ExecutionResult executeItem(ExecutionItem item, ExecutionListener listener,
-                                           final ExecutionService executionService,
-                                           final Framework framework) throws ExecutionException {
-            testItem=item;
-            testListener=listener;
-            executeItemCalled=true;
-            testFramework = framework;
-            testExecutionService=executionService;
-            return returnResult;
-        }
-        static void reset(){
-            testItem=null;
-            testListener=null;
-            executeItemCalled=false;
-            testFramework=null;
-            testExecutionService=null;
-        }
-
-    }*/
-    public static class testExecutor1 implements CommandInterpreter{
-        static ExecutionItem testItem;
-        static ExecutionContext testContext;
-        static ExecutionListener testListener;
-        static boolean executeItemCalled = false;
-        static Framework testFramework;
-        static InterpreterResult returnResult = null;
-        Framework framework;
-
-        public testExecutor1(Framework framework) {
-            this.framework = framework;
-        }
-
-        public InterpreterResult interpretCommand(ExecutionContext context, ExecutionItem item, INodeEntry node) throws
-            InterpreterException {
-            testContext=context;
-            testItem = item;
-            testListener = context.getExecutionListener();
-            executeItemCalled = true;
-            testFramework = framework;
-            return returnResult;
-        }
-
-        static void reset() {
-            testContext=null;
-            testItem = null;
-            testListener = null;
-            executeItemCalled = false;
-            testFramework = null;
-        }
-    }
-
-    static class noopDispatcher implements CentralDispatcher{
-        public QueuedItemResult queueDispatcherScript(IDispatchedScript dispatch) throws CentralDispatcherException {
-            return null;
-        }
-
-        public QueuedItemResult queueDispatcherJob(IDispatchedJob job) throws CentralDispatcherException {
-            return null;
-        }
-
-        public Collection<QueuedItem> listDispatcherQueue(final String project) throws CentralDispatcherException {
-            return null;
-        }
-        public Collection<QueuedItem> listDispatcherQueue() throws CentralDispatcherException {
-            return null;
-        }
-
-        public DispatcherResult killDispatcherExecution(String id) throws CentralDispatcherException {
-            return null;
-        }
-
-        public ExecutionFollowResult followDispatcherExecution(String id, ExecutionFollowRequest request,
-                                                               ExecutionFollowReceiver receiver) throws
-            CentralDispatcherException {
-            return null;
-        }
-
-        public Collection<IStoredJob> listStoredJobs(IStoredJobsQuery query, OutputStream output,
-                                                     JobDefinitionFileFormat format) throws CentralDispatcherException {
-            return null;
-        }
-
-        public Collection<IStoredJobLoadResult> loadJobs(ILoadJobsRequest request, File input,
-                                                         JobDefinitionFileFormat format) throws
-            CentralDispatcherException {
-            return null;
-        }
-
-        public void reportExecutionStatus(String project, String title, String status, int failedNodeCount,
-                                          int successNodeCount, String tags, String script, String summary, Date start,
-                                          Date end) throws CentralDispatcherException {
-        }
-
-        public Collection<DeleteJobResult> deleteStoredJobs(Collection<String> jobIds) throws CentralDispatcherException {
-            return null;
-        }
-
-        public ExecutionDetail getExecution(String execId) throws CentralDispatcherException {
-            return null;
-        }
-    }
-    static class testDispatcher extends noopDispatcher{
-        boolean wascalled;
-        String project;
-        String name;
-        String status;
-        int failedNodeCount;
-        int successNodeCount;
-        String tags;
-        String script;
-        String summary;
-        Date start;
-        Date end;
-
-        @Override
-        public void reportExecutionStatus(String project, String title, String status, int failedNodeCount,
-                                          int successNodeCount, String tags, String script, String summary, Date start,
-                                          Date end) throws CentralDispatcherException {
-            wascalled=true;
-            this.project=project;
-            this.name= title;
-            this.status = status;
-            this.failedNodeCount = failedNodeCount;
-            this.successNodeCount=successNodeCount;
-            this.tags=tags;
-            this.script = script;
-            this.summary=summary;
-            this.start=start;
-            this.end=end;
-        }
-    }
-
-    public void testRunActionShouldLogResult() throws Exception {
-        //set up test Executors
-//        ExecutionServiceFactory.setDefaultExecutorClass(DispatchedScriptExecutionItem.class, testExecutor1.class);
-        final CommandInterpreterService cis = CommandInterpreterService.getInstanceForFramework(
-            getFrameworkInstance());
-        cis.registerClass("exec", testExecutor1.class);
-
-
-        //set return result
-        testExecutor1.returnResult = new InterpreterResult() {
-            public boolean isSuccess() {
-                return true;
-            }
-
-            @Override
-            public String toString() {
-                return "test1ResultString";
-            }
-        };
-
-        final Framework framework = getFrameworkInstance();
-
-        final testDispatcher test1 = new testDispatcher();
-        framework.setCentralDispatcherMgr(test1);
-
-        { //test dispatch shell script
-            System.err.println("testRunActionShouldLogResult start");
-            ExecTool main = new ExecTool(framework);
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "--", "uptime", "for", "ever"});
-
-            main.runAction();
-            System.err.println("testRunActionShouldLogResult selector: " + main.getNodeSelector());
-            assertTrue(test1.wascalled);
-            assertEquals(TEST_EXEC_TOOL_PROJECT, test1.project);
-            assertEquals("dispatch", test1.name);
-            assertEquals("succeeded", test1.status);
-            assertEquals(0, test1.failedNodeCount);
-
-            assertEquals(1, test1.successNodeCount);
-            assertEquals("", test1.tags);
-            assertEquals("dispatch -p " + TEST_EXEC_TOOL_PROJECT + " -- uptime for ever", test1.script);
-            assertEquals("DispatcherResult{status=true, results={test1=test1ResultString}}", test1.summary);
-            assertNotNull(test1.start);
-            assertNotNull(test1.end);
-
-
-            testExecutor1.reset();
-        }
-    }
-
-    public void testRunActionShouldLogResultFailure() throws Exception {
-        //set up test Executors
-//        ExecutionServiceFactory.setDefaultExecutorClass(DispatchedScriptExecutionItem.class, testExecutor1.class);
-        final CommandInterpreterService cis = CommandInterpreterService.getInstanceForFramework(
-            getFrameworkInstance());
-        cis.registerClass("exec", testExecutor1.class);
-        //set return result
-        testExecutor1.returnResult = new InterpreterResult() {
-            public boolean isSuccess() {
-                return false;
-            }
-            public String toString() {
-                return "test failure result";
-            }
-        };
-
-        final Framework framework = getFrameworkInstance();
-
-        final testDispatcher test1 = new testDispatcher();
-        framework.setCentralDispatcherMgr(test1);
-
-        { //test dispatch shell script
-            ExecTool main = new ExecTool(framework);
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "--", "uptime", "for", "ever"});
-
-            try {
-                main.runAction();
-                fail("should have thrown exception");
-            } catch (Exception e) {
-                assertEquals("DispatcherResult{status=false, results={test1=test failure result}}", e.getMessage());
-            }
-            assertTrue(test1.wascalled);
-            assertEquals(TEST_EXEC_TOOL_PROJECT, test1.project);
-            assertEquals("dispatch", test1.name);
-            assertEquals("failed", test1.status);
-            assertEquals(1, test1.failedNodeCount);
-            assertEquals(0, test1.successNodeCount);
-            assertEquals("", test1.tags);
-            assertEquals("dispatch -p " + TEST_EXEC_TOOL_PROJECT + " -- uptime for ever", test1.script);
-            assertEquals("DispatcherResult{status=false, results={test1=test failure result}}", test1.summary);
-            assertNotNull(test1.start);
-            assertNotNull(test1.end);
-
-
-            testExecutor1.reset();
-        }
-    }
-    public void testRunAction() throws Exception{
-        //set up test Executors
-//        ExecutionServiceFactory.setDefaultExecutorClass(DispatchedScriptExecutionItem.class, testExecutor1.class);
-        final CommandInterpreterService cis = CommandInterpreterService.getInstanceForFramework(
-            getFrameworkInstance());
-        cis.registerClass("exec", testExecutor1.class);
-        cis.registerClass("script", testExecutor1.class);
-        testExecutor1.returnResult=null;
-
-        final Framework framework = getFrameworkInstance();
-
-        framework.setCentralDispatcherMgr(new noopDispatcher());
-
-        {//test null result
-            ExecTool main = new ExecTool(framework);
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-s", testScriptFile.getAbsolutePath()});
-
-            try {
-                main.runAction();
-                fail("run shouldn't succeed");
-            } catch (CoreException e) {
-                assertNotNull(e);
-                assertEquals("DispatcherResult{status=false, results={}}", e.getMessage());
-                e.printStackTrace(System.err);
-            }
-            assertTrue("executeItem not called", testExecutor1.executeItemCalled);
-            assertNotNull("missing execitem", testExecutor1.testItem);
-            assertNotNull("missing execListener", testExecutor1.testListener);
-            assertNotNull("missing testFramework", testExecutor1.testFramework);
-            testExecutor1.reset();
-        }
-
-        //set return result
-        testExecutor1.returnResult=new InterpreterResult(){
-            public boolean isSuccess() {
-                return true;
-            }
-
-            public String toString() {
-                return "testResult1";
-            }
-        };
-
-        { //test dispatch shell script
-            ExecTool main = new ExecTool(framework);
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "--", "uptime","for","ever"});
-
-            main.runAction();
-            assertNotNull("missing execitem", testExecutor1.testItem);
-            assertNotNull("missing execListener", testExecutor1.testListener);
-            assertTrue("executeItem not called", testExecutor1.executeItemCalled);
-            assertNotNull("missing testFramework", testExecutor1.testFramework);
-            assertNotNull("missing testFramework", testExecutor1.testContext);
-
-            assertTrue(testExecutor1.testItem instanceof ExecCommandExecutionItem);
-            ExecCommandExecutionItem item1 = (ExecCommandExecutionItem) testExecutor1.testItem;
-            assertEquals(TEST_EXEC_TOOL_PROJECT, testExecutor1.testContext.getFrameworkProject());
-            assertNotNull("should not be null", item1.getCommand());
-            assertEquals("should not be null",3, item1.getCommand().length);
-            assertEquals("should not be null","uptime", item1.getCommand()[0]);
-            assertEquals("should not be null","for", item1.getCommand()[1]);
-            assertEquals("should not be null","ever", item1.getCommand()[2]);
-
-            testExecutor1.reset();
-        }
-        { //now test the script detail: script file path
-            ExecTool main = new ExecTool(framework);
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-s", testScriptFile.getAbsolutePath()});
-
-            main.runAction();
-            assertNotNull("missing execitem", testExecutor1.testItem);
-            assertNotNull("missing execListener", testExecutor1.testListener);
-            assertTrue("executeItem not called", testExecutor1.executeItemCalled);
-            assertNotNull("missing testFramework", testExecutor1.testFramework);
-            assertNotNull("missing testFramework", testExecutor1.testContext);
-
-            assertTrue(testExecutor1.testItem instanceof ScriptFileCommandExecutionItem);
-            ScriptFileCommandExecutionItem item1 = (ScriptFileCommandExecutionItem) testExecutor1.testItem;
-            assertEquals(TEST_EXEC_TOOL_PROJECT, testExecutor1.testContext.getFrameworkProject());
-            assertEquals(testScriptFile.getAbsolutePath(), item1.getServerScriptFilePath());
-            assertNull(item1.getScript());
-            assertNotNull(item1.getScriptAsStream());
-
-            testExecutor1.reset();
-        }
-        {//: script file path with args
-            ExecTool main = new ExecTool(framework);
-            main.parseArgs(
-                new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-s", testScriptFile.getAbsolutePath(), "--", "test", "args"});
-
-
-            main.runAction();
-            assertNotNull("missing execitem", testExecutor1.testItem);
-            assertNotNull("missing execListener", testExecutor1.testListener);
-            assertTrue("executeItem not called", testExecutor1.executeItemCalled);
-            assertNotNull("missing testFramework", testExecutor1.testFramework);
-            assertNotNull("missing testFramework", testExecutor1.testContext);
-
-            assertTrue(testExecutor1.testItem instanceof ScriptFileCommandExecutionItem);
-            ScriptFileCommandExecutionItem item1 = (ScriptFileCommandExecutionItem) testExecutor1.testItem;
-            assertEquals(TEST_EXEC_TOOL_PROJECT, testExecutor1.testContext.getFrameworkProject());
-            assertEquals(testScriptFile.getAbsolutePath(), item1.getServerScriptFilePath());
-            assertNotNull(testExecutor1.testContext.getArgs());
-            String[] args = testExecutor1.testContext.getArgs();
-            assertEquals("incorrect args count", 2, args.length);
-            assertEquals("incorrect args count", "test", args[0]);
-            assertEquals("incorrect args count", "args", args[1]);
-            assertNull(item1.getScript());
-            assertNotNull(item1.getScriptAsStream());
-
-            testExecutor1.reset();
-
-        }
-        { //: script file path: with args with a space
-            ExecTool main = new ExecTool(framework);
-            main.parseArgs(
-                new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-s", testScriptFile.getAbsolutePath(), "--", "test", "args",
-                    "with a space"});
-
-            main.runAction();
-            assertNotNull("missing execitem", testExecutor1.testItem);
-            assertNotNull("missing execListener", testExecutor1.testListener);
-            assertTrue("executeItem not called", testExecutor1.executeItemCalled);
-            assertNotNull("missing testFramework", testExecutor1.testFramework);
-            assertNotNull("missing testFramework", testExecutor1.testContext);
-
-            assertTrue(testExecutor1.testItem instanceof ScriptFileCommandExecutionItem);
-            ScriptFileCommandExecutionItem item1 = (ScriptFileCommandExecutionItem) testExecutor1.testItem;
-            assertEquals(TEST_EXEC_TOOL_PROJECT, testExecutor1.testContext.getFrameworkProject());
-            assertEquals(testScriptFile.getAbsolutePath(), item1.getServerScriptFilePath());
-            assertNotNull(testExecutor1.testContext.getArgs());
-            String[] args = testExecutor1.testContext.getArgs();
-            assertEquals("incorrect args count", 3, args.length);
-            assertEquals("test", args[0]);
-            assertEquals("args", args[1]);
-            assertEquals("with a space", args[2]);
-            assertNull(item1.getScript());
-            assertNotNull(item1.getScriptAsStream());
-
-            testExecutor1.reset();
-        }
-        { //inline script content
-            ExecTool main = new ExecTool(framework);
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-S", "--", "test", "args"});
-            main.setInlineScriptContent("test content");
-
-
-            main.runAction();
-            assertNotNull("missing execitem", testExecutor1.testItem);
-            assertNotNull("missing execListener", testExecutor1.testListener);
-            assertTrue("executeItem not called", testExecutor1.executeItemCalled);
-            assertNotNull("missing testFramework", testExecutor1.testFramework);
-            assertNotNull("missing testFramework", testExecutor1.testContext);
-
-            assertTrue(testExecutor1.testItem instanceof ScriptFileCommandExecutionItem);
-            ScriptFileCommandExecutionItem item1 = (ScriptFileCommandExecutionItem) testExecutor1.testItem;
-            assertEquals(TEST_EXEC_TOOL_PROJECT, testExecutor1.testContext.getFrameworkProject());
-            assertNotNull(item1.getServerScriptFilePath());
-            assertNotNull(testExecutor1.testContext.getArgs());
-            String[] args = testExecutor1.testContext.getArgs();
-            assertEquals("incorrect args count", 2, args.length);
-            assertEquals("test", args[0]);
-            assertEquals("args", args[1]);
-            assertNotNull(item1.getScript());
-            assertEquals("test content", item1.getScript());
-            assertNotNull(item1.getScriptAsStream());
-
-            testExecutor1.reset();
-        }
-    }
-
-    public void testGenerateArgline() throws Exception {
-        assertEquals("invalid", "test 1 2", CLIUtils.generateArgline("test", new String[]{"1", "2"}));
-        assertEquals("invalid", "test 1 2 '3 4'", CLIUtils.generateArgline("test", new String[]{"1", "2", "3 4"}));
-        assertEquals("invalid", "test 1 2 '\"3 4\"'", CLIUtils.generateArgline("test",
-            new String[]{"1", "2", "\"3 4\""}));
-        assertEquals("invalid", "test 1 2 \"34\"", CLIUtils.generateArgline("test", new String[]{"1", "2", "\"34\""}));
-        assertEquals("invalid", "test 1 2 '3 4'", CLIUtils.generateArgline("test", new String[]{"1", "2", "'3 4'"}));
-        //test empty and null values
-        assertEquals("invalid", "test", CLIUtils.generateArgline("test", null));
-        assertEquals("invalid", "test", CLIUtils.generateArgline("test", new String[0]));
-    }
 
     /**
      * test data using unix line endings
@@ -844,39 +535,6 @@ public class TestExecTool extends AbstractBaseTest {
     private final List<String> testStrings = Arrays.asList(testData1, testData2, testData3);
 
 
-    /**
-     * Test the writeInputToFile method.  InputStream should be written to match the input
-     *
-     * @throws Exception
-     */
-    public void testWriteInputToFile() throws Exception {
-        final org.apache.tools.ant.util.FileUtils utils = org.apache.tools.ant.util.FileUtils.getFileUtils();
-        int index = 0;
-        for (String testData : testStrings) {
-            index++;
-            ExecTool main = newExecTool();
-            File t = File.createTempFile(TEST_EXEC_TOOL_PROJECT, ".txt");
-            t.deleteOnExit();
-            FileOutputStream fos=new FileOutputStream(t);
-            try{
-	            OutputStreamWriter osw = new OutputStreamWriter(fos);
-	            osw.write(testData);
-	            osw.flush();
-	            osw.close();
-            }finally{
-            	fos.close();
-            }
-
-            InputStream ins = new FileInputStream(t);
-            try{
-	            File temp = main.writeInputToFile(ins);
-	            //compare file contents
-	            assertTrue("File contents were not the same (data " + index + ")", utils.contentEquals(t, temp, true));
-            }finally{
-            	ins.close();
-            }
-        }
-    }
 
     public void testCreateNodeSet() throws Exception {
         {
@@ -1032,12 +690,18 @@ public class TestExecTool extends AbstractBaseTest {
         boolean queueCommandCalled = false;
         boolean queueScriptCalled = false;
         boolean listDispatcherCalled = false;
+        boolean listDispatcherPagedCalled = false;
         boolean killCalled = false;
         boolean listStoredJobsCalled = false;
         boolean loadJobsCalled = false;
         boolean queueDispatcherJobCalled = false;
         IDispatchedScript passedinScript;
         String passedinId;
+        boolean hasFilteredNodes=false;
+        INodeSet filteredNodes;
+        String nodesFilter;
+        String nodesProject;
+        List<String> projectNames;
 
         public QueuedItemResult queueDispatcherJob(IDispatchedJob job) throws CentralDispatcherException {
             queueDispatcherJobCalled=true;
@@ -1057,6 +721,14 @@ public class TestExecTool extends AbstractBaseTest {
         }
         public Collection<QueuedItem> listDispatcherQueue() throws CentralDispatcherException {
             listDispatcherCalled = true;
+            return null;
+        }
+
+        @Override
+        public PagedResult<QueuedItem> listDispatcherQueue(final String project, final Paging paging)
+                throws CentralDispatcherException
+        {
+            listDispatcherPagedCalled = true;
             return null;
         }
 
@@ -1107,6 +779,30 @@ public class TestExecTool extends AbstractBaseTest {
         public ExecutionDetail getExecution(String execId) throws CentralDispatcherException {
             return null;
         }
+        @Override
+        public void createProject(final String project, final Properties projectProperties)
+                throws CentralDispatcherException
+        {
+
+            fail("unexpected call to createProject");
+        }
+
+        @Override
+        public INodeSet filterProjectNodes(final String project, final String filter)
+                throws CentralDispatcherException
+        {
+            this.nodesFilter=filter;
+            this.nodesProject=project;
+            if(!hasFilteredNodes) {
+                fail("unexpected call to filterProjectNodes");
+            }
+            return filteredNodes;
+        }
+
+        @Override
+        public List<String> listProjectNames() throws CentralDispatcherException {
+            return projectNames;
+        }
 
         @Override
         public String toString() {
@@ -1121,37 +817,11 @@ public class TestExecTool extends AbstractBaseTest {
         }
     }
 
-    public void testQueueOption() throws Exception {
-        {
-            ExecTool main = newExecTool();
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "--noqueue"});
-            assertTrue(main.isArgNoQueue());
-        }
-        {
-            ExecTool main = newExecTool();
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-" + ExecTool.NO_QUEUE_FLAG});
-            assertTrue(main.isArgNoQueue());
-        }
-
-        //test old -Q/--queue have no effect
-        {
-            ExecTool main = newExecTool();
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "-Q" });
-            assertFalse(main.isArgNoQueue());
-        }
-        {
-            ExecTool main = newExecTool();
-            main.parseArgs(new String[]{"-p", TEST_EXEC_TOOL_PROJECT, "--queue" });
-            assertFalse(main.isArgNoQueue());
-        }
+    public void testQueueOptionArgs() throws Exception {
         //test action calls
-        final Framework framework = getFrameworkInstance();
-
-        {
             ExecTool main = newExecTool();
-            main.setFramework(framework);
             final testCentralDispatcher test = new testCentralDispatcher();
-            framework.setCentralDispatcherMgr(test);
+            main.setCentralDispatcher(test);
 
             //exec the dispatch
 
@@ -1167,11 +837,10 @@ public class TestExecTool extends AbstractBaseTest {
             assertNull(test.passedinScript.getScriptAsStream());
             assertEquals("testProject", test.passedinScript.getFrameworkProject());
         }
-        {
+    public void testQueueOptionArgsSpaces() throws Exception {
             ExecTool main = newExecTool();
-            main.setFramework(framework);
             final testCentralDispatcher test = new testCentralDispatcher();
-            framework.setCentralDispatcherMgr(test);
+            main.setCentralDispatcher(test);
 
             //exec the dispatch
 
@@ -1186,13 +855,12 @@ public class TestExecTool extends AbstractBaseTest {
             assertNull(test.passedinScript.getScriptAsStream());
             assertEquals("testProject", test.passedinScript.getFrameworkProject());
         }
-        {
+    public void testQueueOptionScriptFile() throws Exception {
             //test script path input available as InputStream when queueing dispatch
 
             ExecTool main = newExecTool();
-            main.setFramework(framework);
             final testCentralDispatcher test = new testCentralDispatcher();
-            framework.setCentralDispatcherMgr(test);
+            main.setCentralDispatcher(test);
 
             //exec the dispatch
 
@@ -1206,14 +874,33 @@ public class TestExecTool extends AbstractBaseTest {
             assertNull(test.passedinScript.getScriptAsStream());
             assertEquals("testProject", test.passedinScript.getFrameworkProject());
         }
+    public void testQueueOptionScriptFileArgs() throws Exception {
+            //test script path input available as InputStream when queueing dispatch
 
-        {
+        ExecTool main = newExecTool();
+        final testCentralDispatcher test = new testCentralDispatcher();
+        main.setCentralDispatcher(test);
+
+        //exec the dispatch
+
+        main.run(new String[]{"-p", "testProject", "-s",
+            "src/test/resources/com/dtolabs/rundeck/core/cli/test-dispatch-script.txt","--","arg1","arg2"});
+        test.assertQueueScriptOnlyCalled();
+        assertNotNull("unexpected value: ", test.passedinScript.getArgs());
+        assertEquals("unexpected value: ",Arrays.asList("arg1","arg2"), Arrays.asList(test.passedinScript.getArgs()));
+        assertNull("unexpected value: "+ test.passedinScript.getScript(), test.passedinScript.getScript());
+        assertEquals("unexpected value: " + test.passedinScript.getServerScriptFilePath(),
+            new File("src/test/resources/com/dtolabs/rundeck/core/cli/test-dispatch-script.txt").getAbsolutePath(), test.passedinScript.getServerScriptFilePath());
+        assertNull(test.passedinScript.getScriptAsStream());
+        assertEquals("testProject", test.passedinScript.getFrameworkProject());
+    }
+
+    public void testQueueOptionNodeFilters() throws Exception {
             //test the node filter arguments
 
             ExecTool main = newExecTool();
-            main.setFramework(framework);
             final testCentralDispatcher test = new testCentralDispatcher();
-            framework.setCentralDispatcherMgr(test);
+            main.setCentralDispatcher(test);
 
             //exec the dispatch
 
@@ -1221,17 +908,10 @@ public class TestExecTool extends AbstractBaseTest {
                 new String[]{"-p", "testProject", "-K", "-C", "2", "-I", "hostname1", "-X", "tags=baloney", "-Q", "--",
                     "shell", "command", "string"});
             test.assertQueueScriptOnlyCalled();
-            assertNotNull(test.passedinScript.getNodeSet());
-            assertNotNull(test.passedinScript.getNodeSet().getInclude());
-            assertNotNull(test.passedinScript.getNodeSet().getExclude());
-            assertFalse(test.passedinScript.getNodeSet().getInclude().isBlank());
-            assertFalse(test.passedinScript.getNodeSet().getExclude().isBlank());
-            assertEquals("hostname1", test.passedinScript.getNodeSet().getInclude().getHostname());
-            assertEquals("baloney", test.passedinScript.getNodeSet().getExclude().getTags());
-            assertEquals(2, test.passedinScript.getNodeSet().getThreadCount());
-            assertEquals(true, test.passedinScript.getNodeSet().isKeepgoing());
-
-        }
+            assertNotNull(test.passedinScript.getNodeFilter());
+            assertEquals("hostname: hostname1 !tags: baloney", test.passedinScript.getNodeFilter());
+            assertEquals(2, test.passedinScript.getNodeThreadcount());
+            assertEquals(Boolean.TRUE, test.passedinScript.isKeepgoing());
 
     }
 }

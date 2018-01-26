@@ -52,9 +52,9 @@ public class NodeEntryFactory {
      *
      * @param map input map data
      *
-     * @return
+     * @return new entry
      *
-     * @throws IllegalArgumentException
+     * @throws IllegalArgumentException if name is not set
      */
     @SuppressWarnings ("unchecked")
     public static NodeEntryImpl createFromMap(final Map<String, Object> map) throws IllegalArgumentException {
@@ -73,14 +73,18 @@ public class NodeEntryFactory {
             }
             final HashSet set = new HashSet();
             for (final String s : data) {
-                set.add(s.trim());
+                if (null != s && !"".equals(s.trim())) {
+                    set.add(s.trim());
+                }
             }
             newmap.put("tags", set);
         } else if (null != newmap.get("tags") && newmap.get("tags") instanceof Collection) {
             Collection tags = (Collection) newmap.get("tags");
             HashSet data = new HashSet();
             for (final Object tag : tags) {
-                data.add(tag.toString().trim());
+                if(null!=tag && !"".equals(tag.toString().trim())){
+                    data.add(tag.toString().trim());
+                }
             }
             newmap.put("tags", data);
         }else if (null != newmap.get("tags")) {
@@ -89,16 +93,11 @@ public class NodeEntryFactory {
         }
         try {
             BeanUtils.populate(nodeEntry, newmap);
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        } catch (InvocationTargetException e) {
+        } catch (IllegalAccessException | InvocationTargetException e) {
             e.printStackTrace();
         }
         if (null == nodeEntry.getNodename()) {
             throw new IllegalArgumentException("Required property 'nodename' was not specified");
-        }
-        if (null == nodeEntry.getHostname()) {
-            throw new IllegalArgumentException("Required property 'hostname' was not specified");
         }
         if (null == nodeEntry.getAttributes()) {
             nodeEntry.setAttributes(new HashMap<String, String>());
@@ -107,7 +106,10 @@ public class NodeEntryFactory {
         //populate attributes with any keys outside of nodeprops
         for (final Map.Entry<String, Object> entry : newmap.entrySet()) {
             if (!ResourceXMLConstants.allPropSet.contains(entry.getKey())) {
-                nodeEntry.setAttribute(entry.getKey(), (String) entry.getValue());
+                Object value = entry.getValue();
+                if (null != value) {
+                    nodeEntry.setAttribute(entry.getKey(), value.toString());
+                }
             }
         }
 

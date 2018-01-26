@@ -5,14 +5,14 @@
 DIR=$(cd `dirname $0` && pwd)
 source $DIR/include.sh
 
-# now submit req
-runurl="${APIURL}/jobs"
-
 proj="test"
+# now submit req
+runurl="${APIURL}/project/$proj/jobs"
+
 
 echo "Listing RunDeck Jobs for project ${proj}..."
 
-params="project=${proj}"
+params=""
 
 # get listing
 docurl ${runurl}?${params} > $DIR/curl.out
@@ -21,7 +21,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #Check projects list
 itemcount=$($XMLSTARLET sel -T -t -v "/result/jobs/@count" $DIR/curl.out)
@@ -52,7 +52,7 @@ cat > $DIR/temp.out <<END
 END
 
 # now submit req
-runurl="${APIURL}/jobs/import"
+runurl="${APIURL}/project/$proj/jobs/import"
 
 params="format=yaml&dupeOption=skip"
 
@@ -66,7 +66,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 cat > $DIR/temp.out <<END
 - 
@@ -83,7 +83,7 @@ cat > $DIR/temp.out <<END
 END
 
 # now submit req
-runurl="${APIURL}/jobs/import"
+runurl="${APIURL}/project/$proj/jobs/import"
 
 params="format=yaml&dupeOption=skip"
 
@@ -97,7 +97,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 # load a top-level job not in a group
 cat > $DIR/temp.out <<END
@@ -114,7 +114,7 @@ cat > $DIR/temp.out <<END
 END
 
 # now submit req
-runurl="${APIURL}/jobs/import"
+runurl="${APIURL}/project/$proj/jobs/import"
 
 params="format=yaml&dupeOption=skip"
 
@@ -128,7 +128,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 ###
 # test query with match filter and exact filter
@@ -136,7 +136,7 @@ sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 echo "Test inexact jobs query.."
 
-runurl="${APIURL}/jobs"
+runurl="${APIURL}/project/$proj/jobs"
 
 params="project=${proj}&jobFilter=test-jobs&groupPath=api/test-jobs"
 
@@ -147,7 +147,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #Check projects list
 itemcount=$($XMLSTARLET sel -T -t -v "/result/jobs/@count" $DIR/curl.out)
@@ -163,7 +163,7 @@ rm $DIR/curl.out
 
 echo "Test inexact jobs query, exact group.."
 
-runurl="${APIURL}/jobs"
+runurl="${APIURL}/project/$proj/jobs"
 
 params="project=${proj}&jobFilter=test-jobs&groupPathExact=api/test-jobs"
 
@@ -174,7 +174,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #Check projects list
 itemcount=$($XMLSTARLET sel -T -t -v "/result/jobs/@count" $DIR/curl.out)
@@ -190,7 +190,7 @@ rm $DIR/curl.out
 
 echo "Test inexact jobs query, exact name.."
 
-runurl="${APIURL}/jobs"
+runurl="${APIURL}/project/$proj/jobs"
 
 params="project=${proj}&jobExactFilter=test-jobs&groupPath=api/test-jobs"
 
@@ -201,7 +201,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #Check projects list
 itemcount=$($XMLSTARLET sel -T -t -v "/result/jobs/@count" $DIR/curl.out)
@@ -217,7 +217,7 @@ rm $DIR/curl.out
 
 echo "Test inexact jobs query, group only.."
 
-runurl="${APIURL}/jobs"
+runurl="${APIURL}/project/$proj/jobs"
 
 params="project=${proj}&groupPath=api/test-jobs"
 
@@ -228,7 +228,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #Check projects list
 itemcount=$($XMLSTARLET sel -T -t -v "/result/jobs/@count" $DIR/curl.out)
@@ -243,7 +243,7 @@ rm $DIR/curl.out
 
 echo "Test exact name, exact group.."
 
-runurl="${APIURL}/jobs"
+runurl="${APIURL}/project/$proj/jobs"
 
 params="project=${proj}&jobExactFilter=test-jobs&groupPathExact=api/test-jobs"
 
@@ -254,7 +254,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #Check projects list
 itemcount=$($XMLSTARLET sel -T -t -v "/result/jobs/@count" $DIR/curl.out)
@@ -269,7 +269,7 @@ rm $DIR/curl.out
 
 echo "Test exact name, exact group.."
 
-runurl="${APIURL}/jobs"
+runurl="${APIURL}/project/$proj/jobs"
 
 params="project=${proj}&jobExactFilter=test-jobs+another+job&groupPathExact=api/test-jobs/sub-group"
 
@@ -280,7 +280,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #Check projects list
 itemcount=$($XMLSTARLET sel -T -t -v "/result/jobs/@count" $DIR/curl.out)
@@ -296,7 +296,7 @@ rm $DIR/curl.out
 
 echo "Test exact name, exact group 2.."
 
-runurl="${APIURL}/jobs"
+runurl="${APIURL}/project/$proj/jobs"
 
 params="project=${proj}&jobExactFilter=test-jobs&groupPathExact=api/test-jobs"
 
@@ -307,7 +307,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #Check projects list
 itemcount=$($XMLSTARLET sel -T -t -v "/result/jobs/@count" $DIR/curl.out)
@@ -322,7 +322,7 @@ rm $DIR/curl.out
 
 echo "Test exact name, exact group, no match.."
 
-runurl="${APIURL}/jobs"
+runurl="${APIURL}/project/$proj/jobs"
 
 params="project=${proj}&jobExactFilter=test-jobs+another&groupPathExact=api/test-jobs"
 
@@ -333,7 +333,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #Check projects list
 itemcount=$($XMLSTARLET sel -T -t -v "/result/jobs/@count" $DIR/curl.out)
@@ -348,7 +348,7 @@ rm $DIR/curl.out
 
 echo "Test exact name, exact group, no match 2.."
 
-runurl="${APIURL}/jobs"
+runurl="${APIURL}/project/$proj/jobs"
 
 params="project=${proj}&jobExactFilter=test-jobs&groupPathExact=api/test-jobs/sub-group"
 
@@ -359,7 +359,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #Check projects list
 itemcount=$($XMLSTARLET sel -T -t -v "/result/jobs/@count" $DIR/curl.out)
@@ -374,7 +374,7 @@ rm $DIR/curl.out
 
 echo "Test match name, exact group, top level.."
 
-runurl="${APIURL}/jobs"
+runurl="${APIURL}/project/$proj/jobs"
 
 params="project=${proj}&jobFilter=test-jobs&groupPathExact=-"
 
@@ -385,7 +385,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #Check projects list
 itemcount=$($XMLSTARLET sel -T -t -v "/result/jobs/@count" $DIR/curl.out)

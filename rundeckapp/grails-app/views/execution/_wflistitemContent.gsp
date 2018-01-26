@@ -22,32 +22,89 @@
     $Id$
 
 
- --%><div id="wfivis_${i}" style="${wdgt.styleVisible(unless:i==highlight)}">
-    <div class="pflowitem wfctrlholder"><span class="pflow item " id="wfitem_${i}" >
-        <g:render template="/execution/wfItemView" model="${[item:item,edit:edit,noimgs:noimgs,workflow:workflow,project:project]}"/>
+ --%><div id="wfivis_${enc(attr:i)}" style="${i==highlight?'opacity: 0':''}">
+    <div class="pflowitem wfctrlholder"><span class="pflow item " id="wfitem_${enc(attr:i)}" >
+        <g:if test="${isErrorHandler}">
+            <span class="text-muted"><g:message code="Workflow.stepErrorHandler.label.on.error" /></span>
+        </g:if>
+        <g:render template="/execution/wfItemView" model="${[item:item,edit:edit,noimgs:noimgs, workflow: workflow, project: project]}"/>
+        <g:if test="${edit}">
+        <div id="itemdel_${i}" class="panel panel-danger collapse">
+            <div class="panel-heading">
+                <g:message code="${'Workflow.' + (isErrorHandler ? 'stepErrorHandler' : 'step') + '.action.delete.label'}"/>
+            </div>
+            <div class="panel-body">
+                <g:if test="${isErrorHandler}">
+                    <g:message code="Workflow.stepErrorHandler.label.action.confirmDelete" args="${[stepNum + 1]}"/>
+                </g:if>
+                <g:else>
+                    <g:message code="Workflow.step.action.confirmDelete.label" args="${[stepNum + 1]}"/>
+                </g:else>
+            </div>
+
+            <div class="panel-footer">
+                <span class="btn btn-default btn-xs"
+                      onclick="jQuery('#itemdel_${i}').collapse('toggle');"><g:message code="cancel"/></span>
+                <span class="btn btn-danger btn-xs" onclick=" _doRemoveItem('${i}', '${stepNum}', ${isErrorHandler?true:false});"><g:message code="delete"/></span>
+            </div>
+        </div>
+        </g:if>
+        <g:if test="${isErrorHandler}">
+            <g:if test="${item.keepgoingOnSuccess}">
+                <span class=" succeed" title="${enc(code:'Workflow.stepErrorHandler.keepgoingOnSuccess.description')}"><g:message code="Workflow.stepErrorHandler.label.keep.going.on.success" /></span>
+            </g:if>
+        </g:if>
     </span>
+        <g:unless test="${stepNum!=null}">
+            <g:set var="stepNum" value="${i}"/>
+        </g:unless>
 
     <g:if test="${edit}">
-        <span class="wfitemcontrols controls autohide" id="pfctrls_${i}" >
-            <span class="action" onclick="menus.showRelativeTo(this,'itemdel_${i}',-2,-2);" title="Delete this ${g.message(code:'Workflow.step.label')}"><g:img file="icon-tiny-removex.png"/></span>
-           
-            <span class="action textbtn" onclick="_wfiedit(${i});">edit</span>
-            <span class="action dragHandle"  title="Drag to reorder"><g:img file="icon-tiny-drag.png"/></span>
+        <span class="wfitemcontrols controls " id="pfctrls_${enc(attr:i)}" >
+            <g:if test="${!isErrorHandler && !item.errorHandler}">
+                <span class="textbtn textbtn-success wfitem_add_errorhandler">
+                    <i class="glyphicon glyphicon-plus"></i><g:message code="Workflow.stepErrorHandler.label"/></span>
+            </g:if>
+            <span class="textbtn textbtn-danger "
+                  data-toggle="collapse"
+                  data-target="#itemdel_${enc(attr:i)}"
+                  title="${g.message(code:'Workflow.'+(isErrorHandler?'stepErrorHandler':'step')+'.action.delete.label')}">
+                <i class="glyphicon glyphicon-remove"></i></span>
 
+            <span class="textbtn textbtn-info wfitem_edit" >
+                <i class="glyphicon glyphicon-edit"></i>
+                edit
+            </span>
+            <g:unless test="${isErrorHandler}">
+                <span class="action dragHandle"  title="Drag to reorder"><g:img file="icon-tiny-drag.png"/></span>
+            </g:unless>
         </span>
-        <div id="itemdel_${i}" class="confirmMessage popout confirmbox"  style="display:none;">
-            Really delete ${g.message(code:'Workflow.step.label')} ${i+1}?
-            <span class="action button small textbtn" onclick="['itemdel_${i}'].each(Element.hide);">No</span>
-            <span class="action button small textbtn" onclick="_doRemoveItem(${i});">Yes</span>
-        </div>
+
 
         <g:javascript>
-        fireWhenReady('wfitem_${i}',function(){
-            $('wfitem_${i}').select('span.autoedit').each(function(e){
+
+        fireWhenReady('wfitem_${enc(js:i)}',function(){
+            $('wfitem_${enc(js: i)}').select('span.autoedit').each(function(e){
                 Event.observe(e,'click',function(evt){
                     var f=$('workflowContent').down('form');
                     if(!f || 0==f.length){
-                        _wfiedit(${i});
+                        _wfiedit("${enc(js: i)}","${enc(js:stepNum)}",${isErrorHandler?true:false});
+                    }
+                });
+            });
+            $('pfctrls_${enc(js: i)}').select('span.wfitem_edit').each(function(e){
+                Event.observe(e,'click',function(evt){
+                    var f=$('workflowContent').down('form');
+                    if(!f || 0==f.length){
+                        _wfiedit("${enc(js: i)}","${enc(js:stepNum)}",${isErrorHandler?true:false});
+                    }
+                });
+            });
+            $('pfctrls_${enc(js: i)}').select('span.wfitem_add_errorhandler').each(function(e){
+                Event.observe(e,'click',function(evt){
+                    var f=$('workflowContent').down('form');
+                    if(!f || 0==f.length){
+                        _wfishownewErrorHandler("${enc(js: i)}","${enc(js:stepNum)}",${!!item.nodeStep});
                     }
                 });
             });

@@ -20,29 +20,35 @@
     Created: 7/28/11 12:01 PM
  --%>
 
-<%@ page contentType="text/html;charset=UTF-8" %>
+<%@ page import="com.dtolabs.rundeck.plugins.ServiceNameConstants; com.dtolabs.rundeck.core.plugins.configuration.StringRenderingConstants" contentType="text/html;charset=UTF-8" %>
 %{--<g:set var="fieldname" value="${}"/>--}%
 %{--<g:set var="origfieldname" value="${}"/>--}%
+<g:if test="${outofscope}">
+    <td class="${error?'fieldError':''}  ${prop.required ? 'required' : ''}">
+        <g:enc>${prop.title?:prop.name}</g:enc>:
+    </td>
+    <td>
 
-<g:if test="${prop.type.toString()=='Boolean'}">
+</g:if>
+<g:elseif test="${prop.type.toString()=='Boolean'}">
     <g:set var="fieldid" value="${g.rkey()}"/>
     <td>
         <g:hiddenField name="${origfieldname}" value="${values&&values[prop.name]?values[prop.name]:''}"/>
     <g:checkBox name="${fieldname}" value="true" checked="${values&&values[prop.name]?values[prop.name]=='true':prop.defaultValue=='true'}" id="${fieldid}"/>
     </td>
     <td>
-    <label class="${error ? 'fieldError' : ''}" for="${fieldid.encodeAsHTML()}">${prop.title? prop.title.encodeAsHTML(): prop.name.encodeAsHTML()}</label>
-</g:if>
+    <label class="${error ? 'fieldError' : ''}" for="${enc(attr:fieldid)}"><g:enc>${prop.title?:prop.name}</g:enc></label>
+</g:elseif>
 <g:elseif test="${prop.type.toString()=='Select' || prop.type.toString()=='FreeSelect'}">
     <g:set var="fieldid" value="${g.rkey()}"/>
     <td>
-        <label class="${error ? 'fieldError' : ''}  ${prop.required ? 'required' : ''}" for="${fieldid.encodeAsHTML()}">${prop.title ? prop.title.encodeAsHTML() : prop.name.encodeAsHTML()}</label>:
+        <label class="${error ? 'fieldError' : ''}  ${prop.required ? 'required' : ''}" for="${enc(attr:fieldid)}"><g:enc>${prop.title?:prop.name}</g:enc></label>:
     </td>
     <td>
     <g:hiddenField name="${origfieldname}" value="${values&&values[prop.name]?values[prop.name]:''}"/>
     <g:if test="${prop.type.toString()=='FreeSelect'}">
         <g:textField name="${fieldname}" value="${values&&null!=values[prop.name]?values[prop.name]:prop.defaultValue}"
-                     id="${fieldid}" size="40"/>
+                     id="${fieldid}" size="100"/>
 
         <g:select name="${fieldid+'_sel'}" from="${prop.selectValues}" id="${fieldid}"
                   value="${values&&null!=values[prop.name]?values[prop.name]:prop.defaultValue}"
@@ -63,15 +69,51 @@
 <g:else>
     <g:set var="fieldid" value="${g.rkey()}"/>
     <td>
-    <label class="${error ? 'fieldError' : ''} ${prop.required?'required':''}" for="${fieldid.encodeAsHTML()}" >${prop.title ? prop.title.encodeAsHTML() : prop.name.encodeAsHTML()}</label>:
+    <label class="${error ? 'fieldError' : ''} ${prop.required?'required':''}" for="${enc(attr:fieldid)}" ><g:enc>${prop.title?:prop.name}</g:enc></label>:
     </td>
     <td>
     <g:hiddenField name="${origfieldname}" value="${values&&values[prop.name]?values[prop.name]:''}"/>
-    <g:textField name="${fieldname}" value="${values&&null!=values[prop.name]?values[prop.name]:prop.defaultValue}"
-                 id="${fieldid}" size="40"/>
+    <g:if test="${prop.renderingOptions?.(StringRenderingConstants.DISPLAY_TYPE_KEY) in [StringRenderingConstants.DisplayType.MULTI_LINE, 'MULTI_LINE']}">
+        <g:textArea name="${fieldname}" value="${values&&null!=values[prop.name]?values[prop.name]:prop.defaultValue}"
+                 id="${fieldid}" rows="10" cols="100"/>
+    </g:if>
+    <g:elseif test="${prop.renderingOptions?.(StringRenderingConstants.DISPLAY_TYPE_KEY) in [StringRenderingConstants.DisplayType.PASSWORD, 'PASSWORD']}">
+        <g:passwordField name="${fieldname}" value="${values&&null!=values[prop.name]?values[prop.name]:prop.defaultValue}"
+                    id="${fieldid}" rows="10" cols="100"/>
+    </g:elseif>
+    <g:else>
+        <g:textField name="${fieldname}" value="${values&&null!=values[prop.name]?values[prop.name]:prop.defaultValue}"
+                 id="${fieldid}" size="100"/>
+    </g:else>
 </g:else>
-    <div class="info note">${prop.description?.encodeAsHTML()}</div>
+    <div class="info note"><g:enc>${prop.description}</g:enc></div>
     <g:if test="${error}">
-        <span class="warn note">${error.encodeAsHTML()}</span>
+        <span class="warn note"><g:enc>${error}</g:enc></span>
+    </g:if>
+    <g:if test="${outofscope}">
+        <g:set var="scopeinfo" value="${g.rkey()}"/>
+        <g:expander key="${scopeinfo}">Admin configuration info</g:expander>
+        <div class="info note" id="${enc(attr:scopeinfo)}" style="display: none;">
+            This configuration property must be set
+        <g:if test="${prop.scope.isProjectLevel()}">
+            in the project.properties file:
+            <div><code>
+                <g:pluginPropertyProjectScopeKey provider="${pluginName}"
+                                             service="${ServiceNameConstants.Notification}"
+                                             property="${prop.name}"/>=value
+            </code></div>
+        </g:if>
+        <g:if test="${prop.scope.isProjectLevel() && prop.scope.isFrameworkLevel()}">
+            or
+        </g:if>
+        <g:if test="${prop.scope.isFrameworkLevel()}">
+            in the framework.properties file:
+            <div><code>
+            <g:pluginPropertyFrameworkScopeKey provider="${pluginName}"
+                                               service="${ServiceNameConstants.Notification}"
+                                               property="${prop.name}"/>=value
+            </code></div>
+        </g:if>
+        </div>
     </g:if>
 </td>

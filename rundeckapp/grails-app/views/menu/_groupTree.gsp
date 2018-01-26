@@ -15,20 +15,20 @@
             %{
                 newparams['groupPath']=uplevel
             }%
-            <g:link controller="menu" action="jobs" class="groupname" title="Previous level" params="${newparams}">
-                <g:img file="icon-small-folder-up.png" width="16px" height="15px"/>
+            <g:link controller="menu" action="jobs" class="groupname" title="Previous level" params="${newparams+[project:params.project]}">
+                <i class="glyphicon glyphicon-arrow-up"></i>
                 Up
             </g:link>
         </g:if>
         <g:else>
-            <g:link controller="menu" action="jobs" class="groupname" title="Top level">
-                <g:img file="icon-small-folder-up.png" width="16px" height="15px"/>
+            <g:link controller="menu" action="jobs" class="groupname" title="Top level" params="[project: params.project]">
+                <i class="glyphicon glyphicon-arrow-up"></i>
                 Top
             </g:link>
         </g:else>
     </div>
 </g:if>
-<g:set var="gkeys" value="${jobgroups.sort{a,b->a.key<=>b.key}.grep{it.key!=''}}"/>
+<g:set var="gkeys" value="${g.sortGroupKeys(groups: jobgroups.grep {it.key != ''})}"/>
 <g:timerEnd key="gtx"/>
 <g:set var="prevkey" value="${null}"/>
 <g:set var="indent" value="${0}"/>
@@ -59,11 +59,11 @@
             outdiv= (['</div>'] * (count*2)).join('<!-- x -->');
             divcounts-=(count*2);
          }%
-        ${outdiv}
+        ${raw(outdiv)}
 
     </g:elseif>
     <g:else>
-        ${(['</div>'] * divcounts).join('<!--rend-->')}
+        ${raw((['</div>'] * divcounts).join('<!--rend-->'))}
         <g:set var="level" value="${[]}"/>
         <g:set var="indent" value="${0}"/>
         <g:set var="divcounts" value="${0}"/>
@@ -72,41 +72,63 @@
         }%
     </g:else>
     <g:set var="prevkey" value="${group.key}"/>
-    <g:set var="groupopen" value="${(wasfiltered || jscallback)}"/>
-    ${"<"}div class="expandComponentHolder ${groupopen ? 'expanded' : ''} " ${">"}
+    <g:set var="groupopen" value="${(wasfiltered || jscallback || level.size()==1)}"/>
+    ${raw("<")}div class="expandComponentHolder ${groupopen ? 'expanded' : ''} " ${raw(">")}
         %{divcounts++;}%
         <div style="margin-bottom:4px;">
         <g:if test="${jscallback}">
-            <span class="expandComponentControl textbtn action groupname jobgroupexpand" onclick="${jscallback + '(\'' + (prefix ? prefix + '/' + group.key : group.key) + '\');return false;' }" title="${jscallback ? 'Select this group' : 'Expand/Collapse this group'}" style="padding-left:4px;"><%--
-            --%><g:img file="icon-small-folder-open.png" width="16px" height="14px"/> ${displaygroup}<%--
+            <span class="expandComponentControl textbtn textbtn-success groupname jobgroupexpand"
+                  title="Select this group"
+                onclick="groupChosen('${enc(js:prefix ? prefix + '/' + group.key : group.key)}'); return false;"
+                style="padding-left:4px;"><%--
+            --%><i class="glyphicon glyphicon-folder-close"></i> <g:enc>${displaygroup}</g:enc><%--
         --%></span>
         </g:if>
         <g:else>
             <g:set var="jsfunc" value="Expander.toggle(this,null,'.expandComponentHolder.sub_${currkey}_group');"/>
-            <g:expander open="${groupopen?'true':'false'}" jsfunc="${jsfunc}" imgfirst="true" style="padding-left:4px;" classnames="jobgroupexpand">
+            <g:expander open="${groupopen?'true':'false'}" jsfunc="${jsfunc}" imgfirst="true" style="padding-left:4px;" classnames="jobgroupexpand textbtn-secondary">
                 <span class="foldertoggle">&nbsp;</span>
+                <g:if test="${jobsjscallback}">
+                    <g:enc>${displaygroup}</g:enc>
+                </g:if>
             </g:expander>
-            <a class=" groupname" href="${createLink(controller: 'menu', action: 'jobs', params: [groupPath: prefix ? prefix + '/' + group.key : group.key])}">${displaygroup}</a>
+            <g:if test="${!jobsjscallback}">
+            <a class=" groupname secondary" href="${createLink(controller: 'menu', action: 'jobs', params: [project:params.project,groupPath: prefix ? prefix + '/' + group.key : group.key])}"><g:enc>${displaygroup}</g:enc></a>
+                <g:if test="${jobgroups[group.key]}">
+                <span class="" data-bind="visible: enabled">
+                    &bull;
+                    <a href="#" class="btn btn-xs btn-link" data-job-group="${group.key}" data-bind="click: function(){jobGroupSelectAll($element);}">
+                        <g:icon name="check"/>
+                        <g:message code="select.all" />
+                    </a>
+                    <a href="#" class="btn btn-xs btn-link" data-job-group="${group.key}" data-bind="click: function(){jobGroupSelectNone($element);}">
+                        <g:icon name="unchecked"/>
+                        <g:message code="select.none" />
+                    </a>
+                </span>
+
+                </g:if>
+            </g:if>
         </g:else>
         </div>
-        
+
         <g:timerEnd key="prepare"/>
-        ${"<"}div class="expandComponent sub_${currkey}_group sub_group" style="${wdgt.styleVisible(if: groupopen)}"${">"}
+    ${raw("<")}div class="expandComponent sub_${currkey}_group sub_group" style="${wdgt.styleVisible(if: groupopen)}"${raw(">")}
         %{ divcounts++;}%
         <g:if test="${jobgroups[group.key]}">
             <div class="jobGroups subjobs">
-            <g:render template="jobslist" model="[jobslist:jobgroups[group.key],total:jobgroups[group.key]?.size(),nowrunning:nowrunning,nextExecutions:nextExecutions,jobauthorizations:jobauthorizations,authMap:authMap,nowrunningtotal:nowrunningtotal,max:max,offset:offset,paginateParams:paginateParams,sortEnabled:true,headers:false,wasfiltered:wasfiltered,small:small?true:false,jobsjscallback:jobsjscallback,runAuthRequired:runAuthRequired]"/>
+            <g:render template="jobslist" model="[hideSummary:true,jobslist:jobgroups[group.key],total:jobgroups[group.key]?.size(), clusterMap: clusterMap,nextExecutions:nextExecutions,jobauthorizations:jobauthorizations,authMap:authMap,max:max,offset:offset,paginateParams:paginateParams,sortEnabled:true,headers:false,wasfiltered:wasfiltered,small:small?true:false,jobsjscallback:jobsjscallback,runAuthRequired:runAuthRequired]"/>
             </div>
         </g:if>
 
     <g:timerEnd key="_groupTree2.gsp-loop"/>
 </g:each>
-    ${(['</div>'] * divcounts).join('<!--rlast-->')}
+    ${raw((['</div>'] * divcounts).join('<!--rlast-->'))}
 
     <g:if test="${currentJobs}">
         <g:timerStart key="_groupTree2.gsp-jobslist"/>
         <div>
-        <g:render template="jobslist" model="[jobslist:currentJobs,total:currentJobs?.size(),nowrunning:nowrunning,nextExecutions:nextExecutions,jobauthorizations:jobauthorizations,authMap:authMap,nowrunningtotal:nowrunningtotal,max:max,offset:offset,paginateParams:paginateParams,sortEnabled:true,headers:false,wasfiltered:wasfiltered,small:small?true:false,jobsjscallback:jobsjscallback,runAuthRequired:runAuthRequired]"/>
+        <g:render template="jobslist" model="[jobslist:currentJobs,total:currentJobs?.size(),nextExecutions:nextExecutions,jobauthorizations:jobauthorizations,authMap:authMap,max:max,offset:offset,paginateParams:paginateParams,sortEnabled:true,headers:false,wasfiltered:wasfiltered,small:small?true:false,jobsjscallback:jobsjscallback,runAuthRequired:runAuthRequired]"/>
         </div>
         <g:timerEnd key="_groupTree2.gsp-jobslist"/>
     </g:if>

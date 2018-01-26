@@ -27,9 +27,8 @@ import com.dtolabs.rundeck.core.common.*;
 import com.dtolabs.rundeck.core.execution.ExecutionContext;
 import com.dtolabs.rundeck.core.plugins.BaseProviderRegistryService;
 import com.dtolabs.rundeck.core.execution.service.ExecutionServiceException;
-import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException;
-import com.dtolabs.rundeck.core.resources.FileResourceModelSource;
-import com.dtolabs.rundeck.core.resources.ResourceModelSourceException;
+import com.dtolabs.rundeck.plugins.ServiceNameConstants;
+
 
 /**
  * NodeProcessorService is ...
@@ -38,37 +37,22 @@ import com.dtolabs.rundeck.core.resources.ResourceModelSourceException;
  */
 public class NodeDispatcherService extends BaseProviderRegistryService<NodeDispatcher>{
 
-    private static final String SERVICE_NAME = "NodeDispatcher";
+    private static final String SERVICE_NAME = ServiceNameConstants.NodeDispatcher;
 
     public NodeDispatcherService(Framework framework) {
         super(framework);
         registry.put("parallel", ParallelNodeDispatcher.class);
         registry.put("sequential", SequentialNodeDispatcher.class);
+        registry.put("orchestrator", OrchestratorNodeDispatcher.class);
     }
 
     public  NodeDispatcher getNodeDispatcher(ExecutionContext context) throws ExecutionServiceException {
-        final NodesSelector nodeset = context.getNodeSelector();
-        final FrameworkProject frameworkProject = framework.getFrameworkProjectMgr().getFrameworkProject(
-            context.getFrameworkProject());
-        INodeSet filtered=null;
-        try {
-            INodeSet unfiltered;
-            if(null!= context.getNodesFile()) {
-                unfiltered = FileResourceModelSource.parseFile(context.getNodesFile(), framework,
-                    context.getFrameworkProject());
-            }else{
-                unfiltered=frameworkProject.getNodeSet();
-            }
-            filtered = NodeFilter.filterNodes(nodeset, unfiltered);
-        } catch (NodeFileParserException e) {
-            throw new ExecutionServiceException(e, getName());
-        } catch (ResourceModelSourceException e) {
-            throw new ExecutionServiceException(e, getName());
-        } catch (ConfigurationException e) {
-            throw new ExecutionServiceException(e, getName());
+        //this gets called for each node as well if we already have data then the parent orchestrator has fired
+        if(context.getOrchestrator() != null && 
+                !context.getDataContext().containsKey(OrchestratorNodeDispatcher.ORCHESTRATOR_DATA)){
+            return providerOfType("orchestrator");
         }
-
-        if (context.getThreadCount() > 1 && filtered.getNodeNames().size() > 1) {
+        if (context.getThreadCount() > 1 && context.getNodes().getNodeNames().size() > 1) {
             return providerOfType("parallel");
         }else{
             return providerOfType("sequential");

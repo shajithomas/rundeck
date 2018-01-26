@@ -1,9 +1,9 @@
+<%@ page import="rundeck.Execution; rundeck.ScheduledExecution; rundeck.ExecReport" %>
 <%--
   Created by IntelliJ IDEA.
   User: greg
   Date: Aug 7, 2008
   Time: 10:32:26 AM
-  To change this template use File | Settings | File Templates.
 --%>
 <g:set var="rkey" value="${g.rkey()}"/>
 <g:if test="${!options}">
@@ -11,41 +11,41 @@
 </g:if>
 <%
     if(!options.msgsplitsize){
-        options.msgsplitsize=60
+        options.msgsplitsize=100
     }
     def j = 0;
 %>
 <g:set var="maxmsgsize" value="${options.evtmaxsize?options.evtmaxsize:options.msgsplitsize?options.msgsplitsize:-1}"/>
 <g:set var="maxtitlesize" value="${30}"/>
-<table cellpadding="0" cellspacing="0" class="jobsList list history" >
-    <thead>
-
-    <tr>
-        <th colspan="2"><g:message code="events.history.title.Name"/></th>
-        <th colspan="1"><g:message code="events.history.title.Summary"/></th>
-
-        <g:if test="${options.tags}">
-            <th><g:message code="jobquery.title.tagsFilter"/></th>
-        </g:if>
-        <th colspan="2"><g:message code="events.history.title.NodeFailureCount"/></th>
-        <th><g:message code="jobquery.title.userFilter"/></th>
-        <th><g:message code="jobquery.title.projFilter"/></th>
-        <th><g:message code="jobquery.title.endFilter"/></th>
-    </tr>
-    </thead>
     <g:set var="sincetime" value="${0}"/>
     <g:if test="${hiliteSince}">
         <g:set var="sincetime" value="${hiliteSince instanceof String? Long.parseLong(hiliteSince) : hiliteSince}"/>
     </g:if>
     <g:each in="${reports}">
         <g:set var="rpt" value="${it}"/>
-        <tr class="  ${it?.status != 'succeed' ? 'fail' : ''}  ${!it.dateCompleted ? 'nowrunning' : ''} ${sincetime && it.dateCompleted.time>sincetime?'newitem':''} hilite expandComponentHolder sectionhead" onclick="Expander.toggle(this,'${rkey}subsect_${it.id}');">
-            <td style="width:12px;">
-                <span class="action textbtn expandComponentControl" >
-                    <img src="${resource(dir: 'images', file: 'icon-tiny-disclosure.png')}" title="Toggle extra information" alt="" width="12px" height="12px"/>
-                </span>
+        <g:set var="foundJob" value="${null}"/>
+        <g:set var="execution" value="${null}"/>
+        <g:set var="status" value="${it?.status=='succeed'?'succeeded':'failed'}"/>
+        <g:if test="${rpt?.jcJobId}">
+            <g:set var="foundJob" value="${ScheduledExecution.getByIdOrUUID(it.jcJobId)}"/>
+        </g:if>
+        <g:if test="${rpt?.jcExecId}">
+            <g:set var="execution" value="${Execution.get(it.jcExecId)}"/>
+            <g:set var="status" value="${execution.executionState}"/>
+        </g:if>
+        <tr class="link autoclick ${it?.status != 'succeed' ? 'fail' : ''}  ${!it.dateCompleted ? 'nowrunning' : ''} ${sincetime && it.dateCompleted.time>sincetime?'newitem':''}  " >
+            <g:if test="${!hideEdit}">
+            <td style="display: none" class="eventicon obs_bulk_edit_enable">
+                <input type="checkbox" value="${enc(attr:rpt.jcExecId)}" name="bulk_edit" class="_defaultInput bulk_edit"/>
             </td>
-
+            </g:if>
+            <g:set var="statusIcon" value="${!execution.dateCompleted ? 'running' : execution.statusSucceeded() ?
+                    'succeed' : execution.cancelled ? 'aborted' :execution.willRetry ? 'failedretry' :execution.timedOut ? 'timedout' :
+                    execution.status in ['false','failed']?'fail':'other'}"/>
+            <g:set var="statusIcon" value="${[succeeded:'succeed','failed-with-retry':'failedretry',failed:'fail'].get(status)?:status}"/>
+            <td class="eventicon autoclickable">
+                <i class="exec-status icon ${statusIcon}"></i>
+            </td>
             <g:set var="vals" value="${['?','?','?']}"/>
             <g:if test="${it instanceof ExecReport}">
                 <g:if test="${it?.node=~/^\d+\/\d+\/\d+$/}">
@@ -57,99 +57,97 @@
             </g:if>
 
 
-            <td class="eventtitle ${rpt?.jcJobId?'job':'adhoc'}">
-            <span>
-                <g:if test="${rpt?.reportId }">
-                    <g:truncate max="${maxtitlesize}" front="true">${rpt?.reportId.encodeAsHTML()}</g:truncate>
-                </g:if>
-                %{--<g:elseif test="${it.jcJobId }">--}%
-                    %{--<g:set var="jobname" value="${job?.generateFullName()}"/>--}%
-                    %{--<g:truncate max="${maxtitlesize}" front="true">${jobname.encodeAsHTML()}</g:truncate>--}%
-                %{--</g:elseif>--}%
-                <g:else>
-                    <g:message code="events.history.jobname.adhoc"/>
-                </g:else>
-                </span>
-            </td>
-
-            <td style="" class="eventsummary ${rpt?.jcJobId?'job':'adhoc'}">
-
-                <span class="actiontitle ${it?.status != 'succeed' ? '' : ''} ">
-                    <g:if test="${it.jcJobId || it.jcExecId}">
-                        <g:truncate max="${maxmsgsize}">${rpt.title.encodeAsHTML()}</g:truncate>
+        <td class="eventtitle ${rpt?.jcJobId ? 'job' : 'adhoc'} autoclickable" colspan="${rpt?.jcJobId?1:2}">
+            <g:link controller="execution" action="show" id="${rpt.jcExecId}" class="_defaultAction"
+                params="[project:execution?execution.project:rpt.ctxProject?:params.project]"
+                    title="View execution output" absolute="${absoluteLinks}">#<g:enc>${rpt.jcExecId}</g:enc></g:link>
+            <g:if test="${options.summary}">
+                <g:if test="${rpt?.jcJobId}">
+                    <g:set var="foundJob" value="${ScheduledExecution.getByIdOrUUID(it.jcJobId)}"/>
+                    <g:if test="${foundJob}">
+                        <g:enc>${foundJob.groupPath ? foundJob.groupPath+'/':''}${foundJob.jobName}</g:enc>
                     </g:if>
-                    <g:elseif test="${it instanceof ExecReport && it.adhocScript}">
-                        <g:truncate max="${maxmsgsize}">${rpt.adhocScript.encodeAsHTML()}</g:truncate>
-                    </g:elseif>
                     <g:else>
-                        <g:truncate max="${maxmsgsize}">${rpt.title.encodeAsHTML()}</g:truncate>
+                        <span class="text-muted">(<g:message
+                                code="domain.ScheduledExecution.title"/> ID <g:enc>${it.jcJobId}</g:enc> has been deleted)</span>
                     </g:else>
-                </span>
-            </td>
 
-
-           
-
-            <g:if test="${options.tags}">
-            <td>
-                <g:if test="${it.tags}">
-                    <g:each in="${it.tags.split(/\s*,\s*/)}" var="tag">
-                        <span class="tag">${tag.encodeAsHTML()}</span>
-                    </g:each>
                 </g:if>
-            </td>
+                <g:else>
+                    <g:enc>${rpt.title}</g:enc>
+                </g:else>
+            </g:if>
+            <g:else>
+                <g:if test="${!it.status}">
+                    <g:message code="status.label.${it.status}"/>
+                </g:if>
+                <g:if test="${(status == 'killed')}">
+                    by <g:enc>${it.abortedByUser}</g:enc>
+                </g:if>
+            </g:else>
+            <g:if test="${statusIcon=='other'}">
+                <span class="exec-status-text custom-status">${execution.status}</span>
+            </g:if>
+        </td>
+            <g:if test="${rpt?.jcJobId}">
+        <td class="eventargs autoclickable">
+            <div class="argstring-scrollable">
+            <g:if test="${execution && execution.argString}">
+                <g:render template="/execution/execArgString" model="[argString: execution.argString]"/>
+            </g:if>
+            <g:if test="${params.debug}">
+                <g:enc>${rpt.toMap()}</g:enc>
+            </g:if>
+            </div>
+        </td>
             </g:if>
 
-            <td style="white-space:nowrap;text-align:right;" class="${vals[1]!='0'?'fail':'ok'}  nodecount sepL">
-                <g:if test="${vals[1]!='0'}">
-                    ${vals[1]} failed
-                </g:if>
-                <g:else>
-                    ${vals[0]} ok
-                </g:else>
-            </td>
-
-            <td >
-                <g:if test="${it instanceof ExecReport && vals}">
-                    <g:set var="summary" value=""/>
-                    <g:if test="${vals.size()>2 && vals[2]!='0'}">
-                        <g:set var="a" value="${Integer.parseInt(vals[0])}"/>
-                        <g:set var="den" value="${Integer.parseInt(vals[2])}"/>
-                        <g:set var="fai" value="${Integer.parseInt(vals[1])}"/>
-                        <g:set var="sucperc" value="${(int)Math.floor((a/den)*100)}"/>
-                        <g:set var="perc" value="${(int)Math.floor((fai/den)*100)}"/>
-                        <g:if test="${vals[0] && vals[2]}">
-                        <g:set var="sucsummary" value="${vals[0]+' of '+vals[2]}"/>
-                        <g:set var="summary" value="${vals[1]+' of '+vals[2]}"/>
-                        </g:if>
-                    </g:if>
-                    <g:else>
-                        <g:set var="perc" value="${0}"/>
-                    </g:else>
-                    <g:if test="${perc>0}">
-                    <g:render template="/common/progressBar" model="${[completePercent:(int)perc,title:'Completed nodes',className:'nodes failure',showpercent:false,innerContent:summary]}"/>
-                    </g:if>
-                </g:if>
-            </td>
-
-            <td class=" sepL user">
-                ${it?.author.encodeAsHTML()}
-            </td>
-
-            <td class="project">
-                ${it?.ctxProject.encodeAsHTML()}
-            </td>
-
-            <td style="white-space:nowrap" class="right sepL">
+            <td style="white-space:nowrap" class="right  date autoclickable">
                 <g:if test="${it.dateCompleted}">
-                    <span title="<g:relativeDate atDate='${it?.dateStarted}'/> to <g:relativeDate atDate='${it?.dateCompleted}'/> ">
-                        <g:relativeDate elapsed="${it?.dateCompleted}" />
-                        (<g:relativeDate end="${it?.dateCompleted}" start="${it?.dateStarted}"/>)
+                    %{--<g:relativeDate elapsed="${it?.dateCompleted}" agoClass="timeago"/>--}%
+                    <g:unless test="${hideDate}">
+                    <span class="timeabs"><g:formatDate date="${it?.dateCompleted}" formatName="jobslist.date.format"/></span>
+                    </g:unless>
+                    <span title="<g:relativeDate atDate='${it?.dateStarted}'/> to <g:relativeDate
+                            atDate='${it?.dateCompleted}'/> ">
+                        in <g:relativeDate end="${it?.dateCompleted}" start="${it?.dateStarted}"/>
                     </span>
                 </g:if>
             </td>
+
+            <td class="  user autoclickable" style="white-space: nowrap">
+                <em>by</em>
+                <g:username user="${it?.author}"/>
+            </td>
+
+            <g:unless test="${hideNodes}">
+            <td class="${vals[1] != '0' ? 'fail' : 'ok'}  nodecount autoclickable ">
+                <g:if test="${vals[1] != '0'}">
+                    <g:enc>${vals[1]}</g:enc> ${options.summary ? '' : 'node'} failed
+                </g:if>
+                <g:else>
+                    <g:enc>${vals[0]}</g:enc> ${options.summary ? '' : 'node'} ok
+                </g:else>
+            </td>
+            </g:unless>
+
         </tr>
-        <g:render template="expandedReportContent" model="[it:it,colspan:9,subkey:rkey+'subsect',index:j]"/>
         <% j++; %>
     </g:each>
-</table>
+<g:if test="${lastDate}">
+    <g:set var="checkUpdatedParams" value="${[since: lastDate,project:params.project]}"/>
+    %{
+        if (filterName) {
+            checkUpdatedParams.filterName = filterName
+        } else {
+            checkUpdatedParams.putAll(paginateParams)
+        }
+    }%
+    <g:set var="checkUpdatedUrl" value="${g.createLink(action: 'since.json', params: checkUpdatedParams)}"/>
+</g:if>
+<g:set var="refreshUrl"
+       value="${g.createLink(action: 'eventsFragment', params: filterName ? [filterName: filterName] : paginateParams)}"/>
+<g:set var="rssUrl"
+       value="${g.createLink(controller: 'feed', action: 'index', params: filterName ? [filterName: filterName] : paginateParams)}"/>
+<g:render template="/common/boxinfo"
+          model="${[name: 'events', model: [total: total, max: max, offset: offset, url: refreshUrl, checkUpdatedUrl: checkUpdatedUrl, rssUrl: rssUrl, lastDate: lastDate]]}"/>

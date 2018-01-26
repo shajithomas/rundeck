@@ -31,8 +31,10 @@ import com.dtolabs.rundeck.core.plugins.PluginException;
 import com.dtolabs.rundeck.core.plugins.ProviderIdent;
 import com.dtolabs.rundeck.core.plugins.ScriptPluginProvider;
 import com.dtolabs.rundeck.core.plugins.configuration.*;
+import com.dtolabs.rundeck.plugins.ServiceNameConstants;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 
@@ -44,9 +46,11 @@ import java.util.Properties;
 public class ResourceModelSourceService extends PluggableProviderRegistryService<ResourceModelSourceFactory> implements
     ConfigurableService<ResourceModelSource>, DescribableService {
 
-    public static final String SERVICE_NAME = "ResourceModelSource";
+    public static final String SERVICE_NAME = ServiceNameConstants.ResourceModelSource;
 
-
+    public List<String> getBundledProviderNames() {
+        return Collections.unmodifiableList(new ArrayList<String>(registry.keySet()));
+    }
     public ResourceModelSourceService(final Framework framework) {
         super(framework);
 
@@ -73,7 +77,10 @@ public class ResourceModelSourceService extends PluggableProviderRegistryService
 
 
     /**
-     * Return a ResourceModelSource of a give type with a given configuration
+     * @return a ResourceModelSource of a give type with a given configuration
+     * @param configuration configuration
+     * @param type provider name
+     * @throws ExecutionServiceException on error
      */
     public ResourceModelSource getSourceForConfiguration(final String type, final Properties configuration) throws
         ExecutionServiceException {
@@ -94,9 +101,9 @@ public class ResourceModelSourceService extends PluggableProviderRegistryService
         return ResourceModelSourceFactory.class.isAssignableFrom(clazz) && hasValidProviderSignature(clazz);
     }
 
-    public ResourceModelSourceFactory createProviderInstance(Class<ResourceModelSourceFactory> clazz,
-                                                             String name) throws PluginException,
-        ProviderCreationException {
+    @Override
+    public <X extends ResourceModelSourceFactory> ResourceModelSourceFactory
+    createProviderInstance(Class<X> clazz, String name) throws PluginException, ProviderCreationException {
         return createProviderInstanceFromType(clazz, name);
     }
 
@@ -117,35 +124,11 @@ public class ResourceModelSourceService extends PluggableProviderRegistryService
     }
 
     public List<Description> listDescriptions() {
-        final ArrayList<Description> list = new ArrayList<Description>();
-        for (final ProviderIdent providerIdent : listProviders()) {
-            try {
-                final ResourceModelSourceFactory providerForType = providerOfType(providerIdent.getProviderName());
-                if (providerForType instanceof Describable) {
-                    Describable desc = (Describable) providerForType;
-                    list.add(desc.getDescription());
-                }
-            } catch (ExecutionServiceException e) {
-                e.printStackTrace();
-            }
-
-        }
-        return list;
+        //TODO: enable field annotations for properties, update plugin Interface and deprecate use of Factory
+        return DescribableServiceUtil.listDescriptions(this, false);
     }
 
     public List<ProviderIdent> listDescribableProviders() {
-        final ArrayList<ProviderIdent> list = new ArrayList<ProviderIdent>();
-        for (final ProviderIdent providerIdent : listProviders()) {
-            try {
-                final ResourceModelSourceFactory providerForType = providerOfType(providerIdent.getProviderName());
-                if (providerForType instanceof Describable) {
-                    list.add(providerIdent);
-                }
-            } catch (ExecutionServiceException e) {
-                e.printStackTrace();
-            }
-
-        }
-        return list;
+        return DescribableServiceUtil.listDescribableProviders(this);
     }
 }

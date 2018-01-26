@@ -24,9 +24,10 @@
 package com.dtolabs.rundeck.core.execution.dispatch;
 
 import com.dtolabs.rundeck.core.execution.ExecutionContext;
-import com.dtolabs.rundeck.core.execution.ExecutionItem;
-import com.dtolabs.rundeck.core.execution.commands.CommandInterpreter;
-import com.dtolabs.rundeck.core.utils.NodeSet;
+import com.dtolabs.rundeck.core.execution.StepExecutionItem;
+import com.dtolabs.rundeck.core.execution.workflow.StepExecutionContext;
+import com.dtolabs.rundeck.core.execution.workflow.steps.node.NodeStepExecutionItem;
+
 
 /**
  * NodeDispatcher is ...
@@ -34,9 +35,14 @@ import com.dtolabs.rundeck.core.utils.NodeSet;
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  */
 public interface NodeDispatcher {
+    // XXX: perhaps remove this in lieu of other interface
     /**
-     * XXX: perhaps remove this in lieu of other interface
+
+     * @param context context
+     * @param item step item
+     * @return result
+     * @throws DispatcherException on error
      */
-    public DispatcherResult dispatch(ExecutionContext context, ExecutionItem item) throws DispatcherException;
-    public DispatcherResult dispatch(ExecutionContext context, Dispatchable item) throws DispatcherException;
+    public DispatcherResult dispatch(StepExecutionContext context, NodeStepExecutionItem item) throws DispatcherException;
+    public DispatcherResult dispatch(StepExecutionContext context, Dispatchable item) throws DispatcherException;
 }

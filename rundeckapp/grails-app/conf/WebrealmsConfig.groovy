@@ -27,12 +27,17 @@ webrealms{
     securityconstraint{
         Login.urlpattern='/user/login'
         LoginError.urlpattern='/user/error'
+        Logout.urlpattern='/user/logout'
+        Loggedout.urlpattern='/user/loggedout'
         Images.urlpattern='/images/*'
         CSS.urlpattern='/css/*'
         JS.urlpattern='/js/*'
         Feed.urlpattern='/feed/*'
         Test.urlpattern='/test/*'
         Api.urlpattern='/api/*'
+        Static.urlpattern='/static/*'
+        Assets.urlpattern='/assets/*'
+        Fonts.urlpattern='/fonts/*'
         all{
             urlpattern='/*'
             authconstraint{
@@ -48,7 +53,7 @@ webrealms{
 
     server{
         addrealm{
-            classname="org.mortbay.jetty.plus.jaas.JAASUserRealm"
+            classname="org.eclipse.jetty.plus.jaas.JAASLoginService"
             name="rundeckrealm"
             LoginModuleName="rundecklogin"
         }

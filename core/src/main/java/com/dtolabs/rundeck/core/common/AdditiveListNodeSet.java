@@ -30,48 +30,49 @@ import java.util.*;
  *
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  */
-public class AdditiveListNodeSet implements INodeSet {
-    List<INodeSet> nodeSetList;
-    TreeSet<String> nodeNames;
-    HashMap<String,INodeSet> nodeIndex;
+public class AdditiveListNodeSet implements INodeSet, NodeSetMerge {
+    final Set<String> nodeNames;
+    final Map<String,INodeSet> nodeIndex;
 
     public AdditiveListNodeSet() {
-        nodeSetList = new ArrayList<INodeSet>();
         nodeNames = new TreeSet<String>();
         nodeIndex=new HashMap<String, INodeSet>();
     }
 
-    public void addNodeSet(final INodeSet nodeSet) {
+    @Override
+    public synchronized void addNodeSet(final INodeSet nodeSet) {
         if(null==nodeSet){
             return;
         }
-        nodeSetList.add(nodeSet);
         nodeNames.addAll(nodeSet.getNodeNames());
         for (final String name : nodeSet.getNodeNames()) {
             nodeIndex.put(name, nodeSet);
         }
     }
 
-    public Collection<INodeEntry> getNodes() {
-        final ArrayList<INodeEntry> nodes = new ArrayList<INodeEntry>();
+    public synchronized Collection<INodeEntry> getNodes() {
+        final List<INodeEntry> nodes = new ArrayList<INodeEntry>();
         for (final String nodeName : nodeNames) {
             nodes.add(nodeIndex.get(nodeName).getNode(nodeName));
         }
         return nodes;
     }
 
-    public INodeEntry getNode(final String name) {
+    public synchronized INodeEntry getNode(final String name) {
         INodeEntry result = null;
-        for (final INodeSet iNodeSet : nodeSetList) {
-            final INodeEntry node = iNodeSet.getNode(name);
-            if (null != node) {
-                result = node;
-            }
+        INodeSet iNodeEntries = nodeIndex.get(name);
+        if(null!=iNodeEntries) {
+            result=iNodeEntries.getNode(name);
         }
         return result;
     }
 
-    public Collection<String> getNodeNames() {
-        return nodeNames;
+    public synchronized Collection<String> getNodeNames() {
+        return new TreeSet<String>(nodeNames);
+    }
+
+    @Override
+    public Iterator<INodeEntry> iterator() {
+        return getNodes().iterator();
     }
 }

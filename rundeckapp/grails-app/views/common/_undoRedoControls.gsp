@@ -22,26 +22,44 @@
     $Id$
  --%>
 <g:set var="rkey" value="${g.rkey()}"/>
-<div style="margin-bottom:10px; ">
+<div style="margin-bottom:10px; " id="undoredo${rkey}">
     <g:if test="${undo}">
-        <span class="action button small" onclick="_doUndoAction('${key?.encodeAsJavaScript()}');">Undo</span>
+        <span class="btn btn-xs btn-default act_undo"  data-undo-key="${enc(attr:key)}">
+            <i class="glyphicon glyphicon-step-backward"></i>
+            Undo
+        </span>
     </g:if>
     <g:else>
-        <span class="button disabled small">Undo</span>
+        <span class="btn btn-xs btn-default disabled "><i class="glyphicon glyphicon-step-backward"></i> Undo</span>
     </g:else>
     <g:if test="${redo}">
-        <span class="action button small" onclick="_doRedoAction('${key?.encodeAsJavaScript()}');">Redo</span>
+        <span class="btn btn-xs btn-default act_redo" data-undo-key="${enc(attr: key)}">
+            Redo
+            <i class="glyphicon glyphicon-step-forward"></i>
+        </span>
     </g:if>
     <g:else>
-        <span class="button disabled small">Redo</span>
+        <span class="btn btn-xs btn-default disabled ">Redo <i class="glyphicon glyphicon-step-forward"></i></span>
     </g:else>
+    <g:jsonToken id="reqtoken_undo_${key}" url="${request.forwardURI}"/>
     <g:if test="${undo || redo}">
-        <span class="action button small" onclick="menus.showRelativeTo(this,'revert_${rkey}');">Revert All Changes</span>
+        %{--popover trigger is initialized on click, defined in jquery init from scheduledExecution/_edit.gsp --}%
+        <span class="btn btn-xs btn-default act_revert_popover"
+              data-toggle="popover"
+              data-popover-content-ref="#revert_${enc(attr:rkey)}"
+              data-placement="bottom"
+              data-trigger="click"
+              data-popover-key="${enc(attr:rkey)}"
+              id="revertall_${enc(attr:rkey)}"
+        >
+            <i class="glyphicon glyphicon-fast-backward"></i>
+            Revert All Changes</span>
 
-        <div id="revert_${rkey}" class="confirmMessage popout confirmbox" style="display:none">
-            Really revert ${revertConfirm?revertConfirm:'all changes'}?
-            <span class="action button small textbtn" onclick="['revert_${rkey}'].each(Element.hide);">No</span>
-            <span class="action button small textbtn" onclick="_doRevertAction('${key?.encodeAsJavaScript()}');">Yes</span>
+        <div id="revert_${enc(attr:rkey)}" class="confirmMessage popout confirmbox" style="display:none">
+            <div class="text-warning">Really revert <g:enc>${revertConfirm?:'all changes'}</g:enc>?</div>
+
+            <span class="btn btn-xs btn-default act_revert_cancel" data-popover-key="${enc(attr: rkey)}" data-undo-key="${enc(attr: key)}">No</span>
+            <span class="btn btn-xs btn-warning act_revert_confirm" data-popover-key="${enc(attr: rkey)}" data-undo-key="${enc(attr: key)}">Yes</span>
         </div>
     </g:if>
 </div>

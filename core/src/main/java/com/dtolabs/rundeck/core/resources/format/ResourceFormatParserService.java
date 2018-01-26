@@ -33,6 +33,8 @@ import com.dtolabs.rundeck.core.plugins.ScriptPluginProvider;
 import com.dtolabs.rundeck.core.plugins.configuration.Describable;
 import com.dtolabs.rundeck.core.plugins.configuration.DescribableService;
 import com.dtolabs.rundeck.core.plugins.configuration.Description;
+import com.dtolabs.rundeck.core.resources.format.json.ResourceJsonFormatParser;
+import com.dtolabs.rundeck.plugins.ServiceNameConstants;
 
 import java.io.File;
 import java.util.*;
@@ -45,15 +47,19 @@ import java.util.*;
 public class ResourceFormatParserService extends PluggableProviderRegistryService<ResourceFormatParser> implements
     DescribableService {
 
-    public static final String SERVICE_NAME = "ResourceFormatParser";
+    public static final String SERVICE_NAME = ServiceNameConstants.ResourceFormatParser;
 
 
+    public List<String> getBundledProviderNames() {
+        return Collections.unmodifiableList(new ArrayList<String>(registry.keySet()));
+    }
     public ResourceFormatParserService(final Framework framework) {
         super(framework);
 
 
         registry.put(ResourceXMLFormatParser.SERVICE_PROVIDER_TYPE, ResourceXMLFormatParser.class);
         registry.put(ResourceYamlFormatParser.SERVICE_PROVIDER_TYPE, ResourceYamlFormatParser.class);
+        registry.put(ResourceJsonFormatParser.SERVICE_PROVIDER_TYPE, ResourceJsonFormatParser.class);
     }
 
     public String getName() {
@@ -61,7 +67,7 @@ public class ResourceFormatParserService extends PluggableProviderRegistryServic
     }
 
     /**
-     * List the available format identifiers provided by all parsers
+     * @return the available format identifiers provided by all parsers
      */
     public List<String> listFormats() {
         final ArrayList<String> list = new ArrayList<String>();
@@ -71,7 +77,7 @@ public class ResourceFormatParserService extends PluggableProviderRegistryServic
         return list;
     }
     /**
-     * List the available format identifiers provided by all parsers
+     * @return  the available format identifiers provided by all parsers
      */
     public List<String> listSupportedFileExtensions() {
         final ArrayList<String> list = new ArrayList<String>();
@@ -106,7 +112,8 @@ public class ResourceFormatParserService extends PluggableProviderRegistryServic
     }
 
     /**
-     * Return the file extension of the file, without ".", or null if the file name doesn't have an extension
+     * @return  the file extension of the file, without ".", or null if the file name doesn't have an extension
+     * @param name file name
      */
     public static String getFileExtension(final String name) {
         final int i = name.lastIndexOf(".");
@@ -139,7 +146,7 @@ public class ResourceFormatParserService extends PluggableProviderRegistryServic
      *
      * @return the parser found for the format
      *
-     * @throws ExecutionServiceException if no provider for the format exists
+     * @throws com.dtolabs.rundeck.core.resources.format.UnsupportedFormatException if format is not supported
      */
     public ResourceFormatParser getParserForFormat(final String format) throws UnsupportedFormatException {
         try {
@@ -201,8 +208,9 @@ public class ResourceFormatParserService extends PluggableProviderRegistryServic
         return ResourceFormatParser.class.isAssignableFrom(clazz) && hasValidProviderSignature(clazz);
     }
 
-    public ResourceFormatParser createProviderInstance(Class<ResourceFormatParser> clazz, String name) throws
-        PluginException, ProviderCreationException {
+    @Override
+    public <X extends ResourceFormatParser> ResourceFormatParser createProviderInstance(Class<X> clazz, String name)
+            throws PluginException, ProviderCreationException {
         return createProviderInstanceFromType(clazz, name);
     }
 

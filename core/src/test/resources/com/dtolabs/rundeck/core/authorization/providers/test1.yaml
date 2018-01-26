@@ -13,14 +13,10 @@ for: # each entry in for: checks a specific type of resource
     - contains: # contains indicates attribute value is a member of a set
         tag: production # tag set membership
       deny: [command_exec]  #allow/deny explicitly
-
-# for backwards compat, if the old "rules" section exists, we could treat it as matching type='job'
-# and match on synthesized "group/name" path as it was before
-rules:
-  ^$:
-    actions: 'foobar'
 by:
     group: ['qa_group','dev_group']
+context:
+    application: rundeck
 ---
 description: Prod can execute all Prod jobs and can view QA jobs, but not execute them
 for: # each entry in for: checks a specific type of resource
@@ -38,11 +34,58 @@ for: # each entry in for: checks a specific type of resource
     - contains: # contains indicates attribute value is a member of a set
         tag: qa # tag set membership
       allow: ['*']  #allow/deny explicitly
-
-# for backwards compat, if the old "rules" section exists, we could treat it as matching type='job'
-# and match on synthesized "group/name" path as it was before
-rules:
-  ^$:
-    actions: 'foobar'
 by:
     group: 'prod_group'
+context:
+    application: rundeck
+---
+description: wildcard group match
+for:
+  job:
+    - match: # map of attributes to perform regex match on
+        group: DEV.* #checks only group, so includes any job in matching group
+      allow: [read,update,create,delete] #allow/deny indicated explicitly
+  node:
+    - contains: # contains indicates attribute value is a member of a set
+        tag: dev # tag set membership
+      allow: [run,read]  #allow/deny explicitly
+    - contains: # contains indicates attribute value is a member of a set
+        tag: production # tag set membership
+      deny: ['*']  #allow/deny explicitly
+by:
+    group: 'dev_.*'
+context:
+    application: rundeck
+---
+description: single user match
+for:
+  node:
+    - contains: # contains indicates attribute value is a member of a set
+        tag: production # tag set membership
+      deny: ['*']  #allow/deny explicitly
+by:
+    username: 'dev1'
+context:
+    application: rundeck
+---
+description: multi user match
+for:
+  node:
+    - contains: # contains indicates attribute value is a member of a set
+        tag: production # tag set membership
+      deny: ['*']  #allow/deny explicitly
+by:
+    username: ['dev1','dev2']
+context:
+    application: rundeck
+---
+description: regex user match
+for:
+  node:
+    - contains: # contains indicates attribute value is a member of a set
+        tag: production # tag set membership
+      deny: ['*']  #allow/deny explicitly
+by:
+    username: ['dev[ABC]']
+context:
+    application: rundeck

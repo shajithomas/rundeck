@@ -25,10 +25,10 @@ package com.dtolabs.rundeck.core.cli.jobs;
 
 import com.dtolabs.client.services.DeleteJobResultImpl;
 import com.dtolabs.client.services.StoredJobImpl;
-import com.dtolabs.rundeck.core.cli.CLIToolException;
 import com.dtolabs.rundeck.core.cli.CLIToolOptionsException;
-import com.dtolabs.rundeck.core.cli.SingleProjectResolver;
+import com.dtolabs.rundeck.core.cli.FailDispatcher;
 import com.dtolabs.rundeck.core.common.Framework;
+import com.dtolabs.rundeck.core.common.INodeSet;
 import com.dtolabs.rundeck.core.dispatcher.*;
 import com.dtolabs.rundeck.core.tools.AbstractBaseTest;
 import junit.framework.Test;
@@ -37,10 +37,7 @@ import org.apache.commons.cli.CommandLine;
 
 import java.io.File;
 import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Date;
+import java.util.*;
 
 
 public class TestJobsTool extends AbstractBaseTest {
@@ -67,7 +64,7 @@ public class TestJobsTool extends AbstractBaseTest {
         junit.textui.TestRunner.run(suite());
     }
 
-    static class testCentralDispatcher1 implements CentralDispatcher {
+    static class testCentralDispatcher1  extends FailDispatcher implements CentralDispatcher {
         boolean purgeStoredJobsCalled = false;
         boolean listStoredJobsCalled = false;
         boolean loadJobsCalled = false;
@@ -81,6 +78,8 @@ public class TestJobsTool extends AbstractBaseTest {
         Collection<DeleteJobResult> purgeJobsResult;
         JobDefinitionFileFormat loadFormat;
         JobDefinitionFileFormat listFormat;
+        INodeSet filteredNodes;
+        List<String> projectList;
 
 
         public QueuedItemResult queueDispatcherJob(IDispatchedJob job) throws CentralDispatcherException {
@@ -153,17 +152,37 @@ public class TestJobsTool extends AbstractBaseTest {
             this.purgeJobsRequest=jobIds;
             return purgeJobsResult;
         }
+
+        @Override
+        public void createProject(final String project, final Properties projectProperties)
+                throws CentralDispatcherException
+        {
+
+            fail("unexpected call to createProject");
+        }
+
+        @Override
+        public INodeSet filterProjectNodes(final String project, final String filter)
+                throws CentralDispatcherException
+        {
+
+            fail("unexpected call to createProject");
+            return filteredNodes;
+        }
+
+        @Override
+        public List<String> listProjectNames() throws CentralDispatcherException {
+            return projectList;
+        }
     }
 
-    public void testRun() throws Exception {
-        final Framework framework = getFrameworkInstance();
-        {
+    public void testRunListProject() throws Exception {
             //test list action
             //test null  result
 
-            final JobsTool tool = new JobsTool(framework);
+            final JobsTool tool = createJobsTool();
             final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
-            framework.setCentralDispatcherMgr(centralDispatcher1);
+            tool.setCentralDispatcher(centralDispatcher1);
 
             try {
                 tool.run(new String[]{"list","-p","test"});
@@ -172,13 +191,13 @@ public class TestJobsTool extends AbstractBaseTest {
                 assertTrue(e.getMessage().startsWith("List request returned null"));
             }
         }
-        {
+    public void testRunListWithoutProject() throws Exception {
             //test list action missing -p flag
             //test 0 items result
 
-            final JobsTool tool = new JobsTool(framework);
+            final JobsTool tool = createJobsTool();
             final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
-            framework.setCentralDispatcherMgr(centralDispatcher1);
+            tool.setCentralDispatcher(centralDispatcher1);
 
             final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
             centralDispatcher1.listJobsResult = jobs;
@@ -190,13 +209,13 @@ public class TestJobsTool extends AbstractBaseTest {
                 assertTrue(e.getMessage().startsWith("list action: -p/--project option is required"));
             }
         }
-        {
+    public void testRunListWithProject0items() throws Exception {
             //test list action
             //test 0 items result
 
-            final JobsTool tool = new JobsTool(framework);
+            final JobsTool tool = createJobsTool();
             final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
-            framework.setCentralDispatcherMgr(centralDispatcher1);
+            tool.setCentralDispatcher(centralDispatcher1);
 
             final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
             centralDispatcher1.listJobsResult = jobs;
@@ -208,13 +227,13 @@ public class TestJobsTool extends AbstractBaseTest {
             assertNull(centralDispatcher1.listStoredJobsOutput);
             assertEquals(JobDefinitionFileFormat.xml,centralDispatcher1.listFormat);
         }
-        {
+    public void testRunListFile0items() throws Exception {
             //test list action with output file
             //test 0 items result
 
-            final JobsTool tool = new JobsTool(framework);
+            final JobsTool tool = createJobsTool();
             final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
-            framework.setCentralDispatcherMgr(centralDispatcher1);
+            tool.setCentralDispatcher(centralDispatcher1);
             File t = File.createTempFile("TestJobsTool", "xml");
             t.deleteOnExit();
 
@@ -228,13 +247,13 @@ public class TestJobsTool extends AbstractBaseTest {
             assertNotNull(centralDispatcher1.listStoredJobsOutput);
             assertEquals(JobDefinitionFileFormat.xml, centralDispatcher1.listFormat);
         }
-        {
+    public void testRunListFileFormat0items() throws Exception {
             //test list action with output file, yaml format
             //test 0 items result
 
-            final JobsTool tool = new JobsTool(framework);
+            final JobsTool tool = createJobsTool();
             final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
-            framework.setCentralDispatcherMgr(centralDispatcher1);
+            tool.setCentralDispatcher(centralDispatcher1);
             File t = File.createTempFile("TestJobsTool", "xml");
             t.deleteOnExit();
 
@@ -249,12 +268,12 @@ public class TestJobsTool extends AbstractBaseTest {
             assertNotNull(centralDispatcher1.listStoredJobsOutput);
             assertEquals(JobDefinitionFileFormat.yaml, centralDispatcher1.listFormat);
         }
-        {
+    public void testRunListNameProject() throws Exception {
             //test list action with query params, -n
 
-            final JobsTool tool = new JobsTool(framework);
+            final JobsTool tool = createJobsTool();
             final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
-            framework.setCentralDispatcherMgr(centralDispatcher1);
+            tool.setCentralDispatcher(centralDispatcher1);
 
             final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
             centralDispatcher1.listJobsResult = jobs;
@@ -267,12 +286,12 @@ public class TestJobsTool extends AbstractBaseTest {
             assertEquals("name1", centralDispatcher1.listStoredJobsQuery.getNameMatch());
             assertEquals(JobDefinitionFileFormat.xml, centralDispatcher1.listFormat);
         }
-        {
+    public void testRunListLongName() throws Exception {
             //test list action with query params, --name
 
-            final JobsTool tool = new JobsTool(framework);
+            final JobsTool tool = createJobsTool();
             final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
-            framework.setCentralDispatcherMgr(centralDispatcher1);
+            tool.setCentralDispatcher(centralDispatcher1);
 
             final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
             centralDispatcher1.listJobsResult = jobs;
@@ -285,12 +304,12 @@ public class TestJobsTool extends AbstractBaseTest {
             assertEquals("name1", centralDispatcher1.listStoredJobsQuery.getNameMatch());
             assertEquals(JobDefinitionFileFormat.xml, centralDispatcher1.listFormat);
         }
-        {
+    public void testRunListGroup() throws Exception {
             //test list action with query params, -g
 
-            final JobsTool tool = new JobsTool(framework);
+            final JobsTool tool = createJobsTool();
             final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
-            framework.setCentralDispatcherMgr(centralDispatcher1);
+            tool.setCentralDispatcher(centralDispatcher1);
 
             final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
             centralDispatcher1.listJobsResult = jobs;
@@ -303,12 +322,12 @@ public class TestJobsTool extends AbstractBaseTest {
             assertEquals("group1", centralDispatcher1.listStoredJobsQuery.getGroupMatch());
             assertEquals(JobDefinitionFileFormat.xml, centralDispatcher1.listFormat);
         }
-        {
+    public void testRunListGroupLong() throws Exception {
             //test list action with query params, --group
 
-            final JobsTool tool = new JobsTool(framework);
+            final JobsTool tool = createJobsTool();
             final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
-            framework.setCentralDispatcherMgr(centralDispatcher1);
+            tool.setCentralDispatcher(centralDispatcher1);
 
             final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
             centralDispatcher1.listJobsResult = jobs;
@@ -321,12 +340,12 @@ public class TestJobsTool extends AbstractBaseTest {
             assertEquals("group2", centralDispatcher1.listStoredJobsQuery.getGroupMatch());
             assertEquals(JobDefinitionFileFormat.xml, centralDispatcher1.listFormat);
         }
-        {
+    public void testRunListIdlist() throws Exception {
             //test list action with query params, -i
 
-            final JobsTool tool = new JobsTool(framework);
+            final JobsTool tool = createJobsTool();
             final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
-            framework.setCentralDispatcherMgr(centralDispatcher1);
+            tool.setCentralDispatcher(centralDispatcher1);
 
             final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
             centralDispatcher1.listJobsResult = jobs;
@@ -340,12 +359,12 @@ public class TestJobsTool extends AbstractBaseTest {
             assertEquals("1,2", centralDispatcher1.listStoredJobsQuery.getIdlist());
             assertEquals(JobDefinitionFileFormat.xml, centralDispatcher1.listFormat);
         }
-        {
+    public void testRunListIdlistLong() throws Exception {
             //test list action with query params, --idlist
 
-            final JobsTool tool = new JobsTool(framework);
+            final JobsTool tool = createJobsTool();
             final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
-            framework.setCentralDispatcherMgr(centralDispatcher1);
+            tool.setCentralDispatcher(centralDispatcher1);
 
             final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
             centralDispatcher1.listJobsResult = jobs;
@@ -358,17 +377,108 @@ public class TestJobsTool extends AbstractBaseTest {
             assertNotNull(centralDispatcher1.listStoredJobsQuery);
             assertEquals("3,4", centralDispatcher1.listStoredJobsQuery.getIdlist());
             assertEquals(JobDefinitionFileFormat.xml, centralDispatcher1.listFormat);
-        }
     }
 
-    public void testPurge() throws Exception{
+    private JobsTool createJobsTool() {
+        return new JobsTool(getFrameworkInstance().getPropertyLookup());
+    }
+
+    public void testLoad() throws Exception {
         final Framework framework = getFrameworkInstance();
-        {
+
+        final JobsTool tool = createJobsTool();
+        final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
+        tool.setCentralDispatcher(centralDispatcher1);
+
+        final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
+        centralDispatcher1.loadJobsResult = new ArrayList<IStoredJobLoadResult>();
+
+        File test = File.createTempFile("blah", ".xml");
+        tool.run(new String[]{"load", "-f", test.getAbsolutePath()});
+        assertFalse("list action was not called", centralDispatcher1.listStoredJobsCalled);
+        assertTrue("load action should be called", centralDispatcher1.loadJobsCalled);
+        assertNull(centralDispatcher1.listStoredJobsOutput);
+        assertNull(centralDispatcher1.listStoredJobsQuery);
+        assertNotNull(centralDispatcher1.loadRequest);
+        assertNull(centralDispatcher1.loadRequest.getProject());
+        assertEquals(StoredJobsRequestDuplicateOption.update, centralDispatcher1.loadRequest.getDuplicateOption());
+        assertNotNull(centralDispatcher1.loadInput);
+        assertEquals(JobDefinitionFileFormat.xml, centralDispatcher1.loadFormat);
+    }
+    public void testLoadWithProject() throws Exception {
+        final Framework framework = getFrameworkInstance();
+
+        final JobsTool tool = createJobsTool();
+        final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
+        tool.setCentralDispatcher(centralDispatcher1);
+
+        final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
+        centralDispatcher1.loadJobsResult = new ArrayList<IStoredJobLoadResult>();
+
+        File test = File.createTempFile("blah", ".xml");
+        tool.run(new String[]{"load", "-f", test.getAbsolutePath(), "-p", "project1"});
+        assertFalse("list action was not called", centralDispatcher1.listStoredJobsCalled);
+        assertTrue("load action should be called", centralDispatcher1.loadJobsCalled);
+        assertNull(centralDispatcher1.listStoredJobsOutput);
+        assertNull(centralDispatcher1.listStoredJobsQuery);
+        assertNotNull(centralDispatcher1.loadRequest);
+        assertEquals("project1", centralDispatcher1.loadRequest.getProject());
+        assertEquals(StoredJobsRequestDuplicateOption.update, centralDispatcher1.loadRequest.getDuplicateOption());
+        assertNotNull(centralDispatcher1.loadInput);
+        assertEquals(JobDefinitionFileFormat.xml, centralDispatcher1.loadFormat);
+    }
+    public void testLoadWithRemoveUUIDs() throws Exception {
+        final Framework framework = getFrameworkInstance();
+
+        final JobsTool tool = createJobsTool();
+        final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
+        tool.setCentralDispatcher(centralDispatcher1);
+
+        final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
+        centralDispatcher1.loadJobsResult = new ArrayList<IStoredJobLoadResult>();
+
+        File test = File.createTempFile("blah", ".xml");
+        tool.run(new String[]{"load", "-f", test.getAbsolutePath(), "-p", "project1", "-r"});
+        assertFalse("list action was not called", centralDispatcher1.listStoredJobsCalled);
+        assertTrue("load action should be called", centralDispatcher1.loadJobsCalled);
+        assertNull(centralDispatcher1.listStoredJobsOutput);
+        assertNull(centralDispatcher1.listStoredJobsQuery);
+        assertNotNull(centralDispatcher1.loadRequest);
+        assertEquals("project1", centralDispatcher1.loadRequest.getProject());
+        assertEquals(StoredJobsRequestDuplicateOption.update, centralDispatcher1.loadRequest.getDuplicateOption());
+        assertEquals(StoredJobsRequestUUIDOption.remove, centralDispatcher1.loadRequest.getUUIDOption());
+        assertNotNull(centralDispatcher1.loadInput);
+        assertEquals(JobDefinitionFileFormat.xml, centralDispatcher1.loadFormat);
+    }
+    public void testLoadWithWithoutRemoveUUIDs() throws Exception {
+        final Framework framework = getFrameworkInstance();
+
+        final JobsTool tool = createJobsTool();
+        final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
+        tool.setCentralDispatcher(centralDispatcher1);
+
+        final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
+        centralDispatcher1.loadJobsResult = new ArrayList<IStoredJobLoadResult>();
+
+        File test = File.createTempFile("blah", ".xml");
+        tool.run(new String[]{"load", "-f", test.getAbsolutePath(), "-p", "project1"});
+        assertFalse("list action was not called", centralDispatcher1.listStoredJobsCalled);
+        assertTrue("load action should be called", centralDispatcher1.loadJobsCalled);
+        assertNull(centralDispatcher1.listStoredJobsOutput);
+        assertNull(centralDispatcher1.listStoredJobsQuery);
+        assertNotNull(centralDispatcher1.loadRequest);
+        assertEquals("project1", centralDispatcher1.loadRequest.getProject());
+        assertEquals(StoredJobsRequestDuplicateOption.update, centralDispatcher1.loadRequest.getDuplicateOption());
+        assertEquals(StoredJobsRequestUUIDOption.preserve, centralDispatcher1.loadRequest.getUUIDOption());
+        assertNotNull(centralDispatcher1.loadInput);
+        assertEquals(JobDefinitionFileFormat.xml, centralDispatcher1.loadFormat);
+    }
+    public void testPurgeOptions() throws Exception{
             //test purge action with query params, --idlist
 
-            final JobsTool tool = new JobsTool(framework);
+            final JobsTool tool = createJobsTool();
             final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
-            framework.setCentralDispatcherMgr(centralDispatcher1);
+            tool.setCentralDispatcher(centralDispatcher1);
 
             final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
             jobs.add(StoredJobImpl.create("3", "test3", "blah", "blah", "blah", "test"));
@@ -392,12 +502,12 @@ public class TestJobsTool extends AbstractBaseTest {
             assertFalse("load action should not be called", centralDispatcher1.loadJobsCalled);
             assertNull(centralDispatcher1.loadRequest);
         }
-        {
+    public void testPurgeNoresults() throws Exception{
             //test purge action with query params, --idlist, no results
 
-            final JobsTool tool = new JobsTool(framework);
+            final JobsTool tool = createJobsTool();
             final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
-            framework.setCentralDispatcherMgr(centralDispatcher1);
+            tool.setCentralDispatcher(centralDispatcher1);
 
             final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
             centralDispatcher1.listJobsResult = jobs;
@@ -418,12 +528,12 @@ public class TestJobsTool extends AbstractBaseTest {
             assertFalse("load action should not be called", centralDispatcher1.loadJobsCalled);
             assertNull(centralDispatcher1.loadRequest);
         }
-        {
+    public void testPurgeSuccess() throws Exception{
             //test purge: success
 
-            final JobsTool tool = new JobsTool(framework);
+            final JobsTool tool = createJobsTool();
             final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
-            framework.setCentralDispatcherMgr(centralDispatcher1);
+            tool.setCentralDispatcher(centralDispatcher1);
 
             final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
             jobs.add(StoredJobImpl.create("3", "test3", "blah", "blah", "blah", "test"));
@@ -449,12 +559,12 @@ public class TestJobsTool extends AbstractBaseTest {
             assertFalse("load action should not be called", centralDispatcher1.loadJobsCalled);
             assertNull(centralDispatcher1.loadRequest);
         }
-        {
+    public void testPurgeFailed() throws Exception{
             //test purge: failed purge causes exception
 
-            final JobsTool tool = new JobsTool(framework);
+            final JobsTool tool = createJobsTool();
             final testCentralDispatcher1 centralDispatcher1 = new testCentralDispatcher1();
-            framework.setCentralDispatcherMgr(centralDispatcher1);
+            tool.setCentralDispatcher(centralDispatcher1);
 
             final ArrayList<IStoredJob> jobs = new ArrayList<IStoredJob>();
             jobs.add(StoredJobImpl.create("3", "test3", "blah", "blah", "blah", "test"));
@@ -484,12 +594,10 @@ public class TestJobsTool extends AbstractBaseTest {
 
             assertFalse("load action should not be called", centralDispatcher1.loadJobsCalled);
             assertNull(centralDispatcher1.loadRequest);
-        }
     }
-    public void testParseArgs() throws Exception {
-        {
+    public void testParseArgsInvalidAction() throws Exception {
             //test invalid action
-            final JobsTool tool = new JobsTool(getFrameworkInstance());
+            final JobsTool tool = createJobsTool();
             try {
                 final String[] args = {"invalid"};
                 final CommandLine line = tool.parseArgs(args);
@@ -500,9 +608,9 @@ public class TestJobsTool extends AbstractBaseTest {
             }
 
         }
-        {
+    public void testParseArgsMissingOptions() throws Exception {
             //test valid actions missing require options
-            final JobsTool tool = new JobsTool(getFrameworkInstance());
+            final JobsTool tool = createJobsTool();
             try {
                 final String[] args = {"load"};
                 final CommandLine line = tool.parseArgs(args);
@@ -512,9 +620,9 @@ public class TestJobsTool extends AbstractBaseTest {
                 assertNotNull(e);
             }
         }
-        {
+    public void testParseArgsInvalidOptions() throws Exception {
             //test valid actions, with invalid option
-            final JobsTool tool = new JobsTool(getFrameworkInstance());
+            final JobsTool tool = createJobsTool();
             try {
                 final String[] args = {"load", "-d", "zamboni"};
                 final CommandLine line = tool.parseArgs(args);
@@ -526,9 +634,9 @@ public class TestJobsTool extends AbstractBaseTest {
                     "Illegal value for --duplicate"));
             }
         }
-        {
+    public void testParseArgsLoadMissingFile() throws Exception {
             //test valid actions, missing required -f
-            final JobsTool tool = new JobsTool(getFrameworkInstance());
+            final JobsTool tool = createJobsTool();
             try {
                 final String[] args = {"load", "-d", "update"};
                 final CommandLine line = tool.parseArgs(args);
@@ -540,9 +648,9 @@ public class TestJobsTool extends AbstractBaseTest {
                     "load action: -f/--file option is required"));
             }
         }
-        {
+    public void testParseArgsLoadDNEFile() throws Exception {
             //test valid actions,  -f points to DNE file
-            final JobsTool tool = new JobsTool(getFrameworkInstance());
+            final JobsTool tool = createJobsTool();
             try {
                 final String[] args = {"load", "-f", "doesnotexist"};
                 final CommandLine line = tool.parseArgs(args);
@@ -554,18 +662,13 @@ public class TestJobsTool extends AbstractBaseTest {
                     "load action: -f/--file option: File does not exist"));
             }
         }
-        {
+    public void testParseArgsListMissingProject() throws Exception {
             //test missing project param
-            final JobsTool tool = new JobsTool(getFrameworkInstance());
-            tool.internalResolver=new SingleProjectResolver() {
-                public boolean hasSingleProject() {
-                    return false;
-                }
+            final JobsTool tool = createJobsTool();
+            testCentralDispatcher1 centralDispatcher = new testCentralDispatcher1();
+            centralDispatcher.projectList = Arrays.asList("abc", "def");
+            tool.setCentralDispatcher(centralDispatcher);
 
-                public String getSingleProjectName() {
-                    return null;
-                }
-            };
             try {
                 final String[] args = {"list", "-n", "test1"};
                 final CommandLine line = tool.parseArgs(args);
@@ -578,18 +681,13 @@ public class TestJobsTool extends AbstractBaseTest {
             }
 
         }
-        {
+    public void testParseArgsListDefaultedProject() throws Exception {
             //test missing project param, defaulting to single project
-            final JobsTool tool = new JobsTool(getFrameworkInstance());
-            tool.internalResolver=new SingleProjectResolver() {
-                public boolean hasSingleProject() {
-                    return true;
-                }
+            final JobsTool tool = createJobsTool();
 
-                public String getSingleProjectName() {
-                    return "testProject";
-                }
-            };
+            testCentralDispatcher1 centralDispatcher = new testCentralDispatcher1();
+            centralDispatcher.projectList = Arrays.asList("testProject");
+            tool.setCentralDispatcher(centralDispatcher);
             try {
                 final String[] args = {"list", "-n", "test1"};
                 final CommandLine line = tool.parseArgs(args);
@@ -600,9 +698,9 @@ public class TestJobsTool extends AbstractBaseTest {
             }
 
         }
-        {
+    public void testParseArgsListValid() throws Exception {
             //test valid actions
-            final JobsTool tool = new JobsTool(getFrameworkInstance());
+            final JobsTool tool = createJobsTool();
             boolean success = false;
             try {
                 final String[] args = {"list", "-n", "test1", "-p", "test"};
@@ -615,9 +713,9 @@ public class TestJobsTool extends AbstractBaseTest {
             assertTrue("parseArgs did not succeed", success);
 
         }
-        {
+    public void testParseArgsListDefault() throws Exception {
             //test valid actions
-            final JobsTool tool = new JobsTool(getFrameworkInstance());
+            final JobsTool tool = createJobsTool();
             try {
                 final String[] args = {"list","-p","test"};
                 final CommandLine line = tool.parseArgs(args);
@@ -627,9 +725,9 @@ public class TestJobsTool extends AbstractBaseTest {
             }
 
         }
-        {
+    public void testParseArgsInvalidFormat() throws Exception {
             //test invalid format
-            final JobsTool tool = new JobsTool(getFrameworkInstance());
+            final JobsTool tool = createJobsTool();
             try {
                 final String[] args = {"-F","zamlx"};
                 final CommandLine line = tool.parseArgs(args);
@@ -639,9 +737,9 @@ public class TestJobsTool extends AbstractBaseTest {
                 assertNotNull(e);
             }
         }
-        {
+    public void testParseArgsXMLFormat() throws Exception {
             //test valid format xml
-            final JobsTool tool = new JobsTool(getFrameworkInstance());
+            final JobsTool tool = createJobsTool();
             try {
                 final String[] args = {"list","-f","test.out","-F","xml","-p","test"};
                 final CommandLine line = tool.parseArgs(args);
@@ -651,9 +749,9 @@ public class TestJobsTool extends AbstractBaseTest {
             }
 
         }
-        {
+    public void testParseArgsYAMLFormat() throws Exception {
             //test valid format yaml
-            final JobsTool tool = new JobsTool(getFrameworkInstance());
+            final JobsTool tool = createJobsTool();
             try {
                 final String[] args = {"list","-f","test.out","-F","yaml", "-p", "test"};
                 final CommandLine line = tool.parseArgs(args);
@@ -663,9 +761,9 @@ public class TestJobsTool extends AbstractBaseTest {
             }
 
         }
-        {
+    public void testParseArgsPurgeRequiresFilter() throws Exception {
             //test valid purge command, requires a filter param (-i,-g,-n)
-            final JobsTool tool = new JobsTool(getFrameworkInstance());
+            final JobsTool tool = createJobsTool();
             try {
                 final String[] args = {"purge","-f","test.out","-F","yaml", "-p", "test"};
                 final CommandLine line = tool.parseArgs(args);
@@ -676,9 +774,9 @@ public class TestJobsTool extends AbstractBaseTest {
             }
 
         }
-        {
+    public void testParseArgsPurge() throws Exception {
             //test valid purge command, with a filter param -i
-            final JobsTool tool = new JobsTool(getFrameworkInstance());
+            final JobsTool tool = createJobsTool();
             try {
                 final String[] args = {"purge","-f","test.out","-F","yaml", "-p", "test","-i","1"};
                 final CommandLine line = tool.parseArgs(args);
@@ -688,5 +786,4 @@ public class TestJobsTool extends AbstractBaseTest {
             }
 
         }
-    }
 }

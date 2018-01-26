@@ -17,7 +17,11 @@
 package com.dtolabs.rundeck.core.cli.project;
 
 import com.dtolabs.rundeck.core.cli.Action;
+import com.dtolabs.rundeck.core.cli.BaseTool;
+import com.dtolabs.rundeck.core.cli.FailDispatcher;
 import com.dtolabs.rundeck.core.common.FrameworkProject;
+import com.dtolabs.rundeck.core.common.IRundeckProject;
+import com.dtolabs.rundeck.core.dispatcher.CentralDispatcherException;
 import com.dtolabs.rundeck.core.tools.AbstractBaseTest;
 import com.dtolabs.rundeck.core.utils.FileUtils;
 import junit.framework.Test;
@@ -25,6 +29,8 @@ import junit.framework.TestSuite;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Properties;
 
 /**
@@ -34,7 +40,6 @@ public class TestProjectTool extends AbstractBaseTest {
 
     private static final String PROJECT = "TestProjectTool";
     File projectsBasedir;
-    private File setupXml;
 
     public TestProjectTool(String name) {
         super(name);
@@ -52,7 +57,6 @@ public class TestProjectTool extends AbstractBaseTest {
     protected void setUp() {
         super.setUp();
         projectsBasedir = new File(getFrameworkProjectsBase());
-        setupXml = new File("src/ant/controllers/rdeck/projectsetupCmd.xml");
     }
 
     public static Test suite() {
@@ -66,7 +70,7 @@ public class TestProjectTool extends AbstractBaseTest {
     }
 
     private ProjectTool createProjectTool() {
-        return new ProjectTool(new File(getBaseDir()));
+        return new ProjectTool(BaseTool.createDefaultDispatcherConfig(),new File(getBaseDir()));
     }
 
 
@@ -78,10 +82,78 @@ public class TestProjectTool extends AbstractBaseTest {
             "-o", "-p", PROJECT,
         };
         setup.parseArgs(args);
-        Action create = setup.createAction(ProjectTool.ACTION_CREATE);
+        Action create = null;
+        final Boolean[] createCalled = new Boolean[1];
+        setup.dispatcher=new FailDispatcher(){
+            @Override
+            public void createProject(final String project, final Properties projectProperties)
+                    throws CentralDispatcherException
+            {
+                assertEquals(PROJECT, project);
+                assertEquals(8,projectProperties.size());
+                assertEquals("file",projectProperties.getProperty("resources.source.1.type"));
+                assertEquals(
+                        new File(
+                                getFrameworkProjectsBase() +
+                                "/" +
+                                PROJECT +
+                                "/etc/resources.xml"
+                        ).getAbsolutePath(), projectProperties.getProperty("resources.source.1.config.file")
+                );
+                assertEquals("true", projectProperties.getProperty("resources.source.1.config.includeServerNode"));
+                assertEquals("true",projectProperties.getProperty("resources.source.1.config.generateFileAutomatically"));
+                assertEquals("jsch-ssh",projectProperties.getProperty("service.NodeExecutor.default.provider"));
+                assertEquals("jsch-scp",projectProperties.getProperty("service.FileCopier.default.provider"));
+                assertEquals(
+                        new File(System.getProperty("user.home"), ".ssh/id_rsa").getAbsolutePath(),
+                        projectProperties.getProperty("project.ssh-keypath")
+                );
+                assertEquals("privateKey",projectProperties.getProperty("project.ssh-authentication"));
+                createCalled[0] =true;
+            }
+        };
+        create = setup.createAction(ProjectTool.ACTION_CREATE);
+
         assertTrue(create instanceof CreateAction);
         create.exec();
+        assertTrue(createCalled[0]);
 
+    }
+    public void testCreateActionsNoArgs() throws Throwable {
+        final ProjectTool setup = createProjectTool();
+        final String[] args = new String[]{
+
+        };
+        setup.parseArgs(args);
+        Action create = null;
+        setup.dispatcher=new FailDispatcher();
+        create = setup.createAction(ProjectTool.ACTION_CREATE);
+
+        assertTrue(create instanceof CreateAction);
+        try {
+            create.exec();
+            fail("Expected exception");
+        } catch (InvalidArgumentsException throwable) {
+            assertEquals("-p option not specified", throwable.getMessage());
+        }
+    }
+    public void testRemoveActionsNoArgs() throws Throwable {
+        final ProjectTool setup = createProjectTool();
+        final String[] args = new String[]{
+
+        };
+        setup.parseArgs(args);
+        Action create = null;
+        setup.dispatcher=new FailDispatcher();
+        create = setup.createAction(ProjectTool.ACTION_REMOVE);
+
+        assertTrue(create instanceof RemoveAction);
+        try {
+            create.exec();
+            fail("Expected exception");
+        } catch (RuntimeException throwable) {
+            assertEquals("unimplemented: RemoveAction.exec", throwable.getMessage());
+        }
     }
 
     public void testCreateActionProperties() throws Throwable {
@@ -94,8 +166,43 @@ public class TestProjectTool extends AbstractBaseTest {
             "--project.blah=something"
         };
         setup.parseArgs(args);
-        Action create = setup.createAction(ProjectTool.ACTION_CREATE);
+        Action create = null;
+        final boolean[] createCalled = {false};
+        setup.dispatcher=new FailDispatcher(){
+            @Override
+            public void createProject(final String project, final Properties projectProperties)
+                    throws CentralDispatcherException
+            {
+                assertEquals(PROJECT, project);
+                assertEquals(2 + 8, projectProperties.size());
+                assertEquals("file",projectProperties.getProperty("resources.source.1.type"));
+                assertEquals(
+                        new File(
+                                getFrameworkProjectsBase() +
+                                "/" +
+                                PROJECT +
+                                "/etc/resources.xml"
+                        ).getAbsolutePath(), projectProperties.getProperty("resources.source.1.config.file")
+                );
+                assertEquals("true", projectProperties.getProperty("resources.source.1.config.includeServerNode"));
+                assertEquals("true",projectProperties.getProperty("resources.source.1.config.generateFileAutomatically"));
+                assertEquals("jsch-ssh",projectProperties.getProperty("service.NodeExecutor.default.provider"));
+                assertEquals("jsch-scp",projectProperties.getProperty("service.FileCopier.default.provider"));
+                assertEquals(
+                        new File(System.getProperty("user.home"), ".ssh/id_rsa").getAbsolutePath(),
+                        projectProperties.getProperty("project.ssh-keypath")
+                );
+                assertEquals("privateKey",projectProperties.getProperty("project.ssh-authentication"));
+
+                //custom props
+                assertEquals("value",projectProperties.getProperty("test1"));
+                assertEquals("something",projectProperties.getProperty("project.blah"));
+                createCalled[0] =true;
+            }
+        };
+            create = setup.createAction(ProjectTool.ACTION_CREATE);
         assertTrue(create instanceof CreateAction);
+
         CreateAction caction = (CreateAction) create;
         assertNotNull(caction.getProperties());
         assertEquals(2, caction.getProperties().size());
@@ -104,6 +211,8 @@ public class TestProjectTool extends AbstractBaseTest {
         assertTrue(caction.getProperties().containsKey("project.blah"));
         assertEquals("something", caction.getProperties().getProperty("project.blah"));
 
+        create.exec();
+        assertTrue(createCalled[0]);
     }
 
     public void testParsePropertyArg() throws Exception {
@@ -168,26 +277,6 @@ public class TestProjectTool extends AbstractBaseTest {
     }
 
 
-    public void testGo() {
-        final File dir = new File(projectsBasedir, PROJECT);
-        if (dir.exists()) {
-            FileUtils.deleteDir(dir);
-        }
-        final ProjectTool setup = createProjectTool();
-        final String[] args = new String[]{
-            "-p", PROJECT,
-            "-b", setupXml.getAbsolutePath(),
-            "-o"
-        };
-        setup.parseArgs(args);
-        setup.executeAction();
-
-        assertTrue("project did not exist", getFrameworkInstance().getFrameworkProjectMgr().existsFrameworkProject(
-            PROJECT));
-
-        final FrameworkProject d = getFrameworkInstance().getFrameworkProjectMgr().createFrameworkProject(PROJECT);
-        assertEquals("project name did not match", d.getName(), PROJECT);
-    }
 
 
 }

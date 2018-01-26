@@ -24,8 +24,20 @@
 package com.dtolabs.rundeck.core.plugins;
 
 import com.dtolabs.rundeck.core.common.Framework;
+import com.dtolabs.rundeck.core.common.INodeEntry;
+import com.dtolabs.rundeck.core.dispatcher.DataContextUtils;
+import com.dtolabs.rundeck.core.execution.ExecutionContext;
 import com.dtolabs.rundeck.core.plugins.configuration.*;
+import com.dtolabs.rundeck.core.storage.ResourceMeta;
+import com.dtolabs.rundeck.core.storage.StorageTree;
+import com.dtolabs.rundeck.plugins.util.DescriptionBuilder;
+import com.dtolabs.rundeck.plugins.util.PropertyBuilder;
+import org.rundeck.storage.api.PathUtil;
+import org.rundeck.storage.api.Resource;
+import org.rundeck.storage.api.StorageException;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.*;
 
 /**
@@ -44,6 +56,7 @@ import java.util.*;
  *     config.X.required = true/false, if the property is required.
  *     config.X.default = default string of the property
  *     config.X.values = comma-separated values list for Select or FreeSelect properties
+ *     config.X.scope = scope of the property, from {@link PropertyScope}
  * </pre>
  *
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
@@ -59,10 +72,13 @@ public abstract class AbstractDescribableScriptPlugin implements Describable {
     public static final String CONFIG_REQUIRED = "required";
     public static final String CONFIG_DEFAULT = "default";
     public static final String CONFIG_VALUES = "values";
+    public static final String CONFIG_SCOPE = "scope";
+    public static final String CONFIG_RENDERING_OPTIONS = "renderingOptions";
+    public static final String SETTING_MERGE_ENVIRONMENT = "mergeEnvironment";
 
     private final ScriptPluginProvider provider;
     private final Framework framework;
-    Description providerDescription;
+    Description description;
 
     public AbstractDescribableScriptPlugin(final ScriptPluginProvider provider, final Framework framework) {
         this.provider = provider;
@@ -70,7 +86,7 @@ public abstract class AbstractDescribableScriptPlugin implements Describable {
     }
 
     /**
-     * Return data with exported plugin details
+     * @return data with exported plugin details
      */
     public Map<String,String> createPluginDataContext() {
         final Map<String,String> pluginDataContext = new HashMap<String, String>();
@@ -82,27 +98,53 @@ public abstract class AbstractDescribableScriptPlugin implements Describable {
         return pluginDataContext;
     }
 
+    /**
+     * Return true if the "mergeEnvironment" is true for the plugin
+     * @return
+     */
+    boolean isMergeEnvVars(){
+        return metaBooleanProp(SETTING_MERGE_ENVIRONMENT, provider.getDefaultMergeEnvVars());
+    }
 
-    static private List<Property> createProperties(final ScriptPluginProvider provider) throws ConfigurationException {
-        final ArrayList<Property> properties = new ArrayList<Property>();
-        int i = 1;
+    private boolean metaBooleanProp(final String prop, boolean defVal) {
+        Object o = provider.getMetadata().get(prop);
+        if (o == null) {
+            return defVal;
+        }
+        if (o == Boolean.TRUE) {
+            return true;
+        }
+        return "true".equals(o);
+    }
+
+
+    static private void createProperties(
+            final ScriptPluginProvider provider,
+            final boolean useConventionalPropertiesMapping,
+            final DescriptionBuilder dbuilder)
+            throws ConfigurationException
+    {
         final Map<String, Object> metadata = provider.getMetadata();
         final Object config = metadata.get("config");
-        if(config instanceof List){
-            final List configs=(List) config;
+        if (config instanceof List) {
+            final List configs = (List) config;
             for (final Object citem : configs) {
-                if(citem instanceof Map){
-                    Map<String,Object> itemmeta=(Map<String,Object>) citem;
+                if (citem instanceof Map) {
+                    final PropertyBuilder pbuild = PropertyBuilder.builder();
+                    final Map<String, Object> itemmeta = (Map<String, Object>) citem;
                     final String typestr = metaStringProp(itemmeta, CONFIG_TYPE);
-                    final Property.Type type;
                     try {
-                        type = Property.Type.valueOf(typestr);
+                        pbuild.type(Property.Type.valueOf(typestr));
                     } catch (IllegalArgumentException e) {
                         throw new ConfigurationException("Invalid property type: " + typestr);
                     }
-                    final String name = metaStringProp(itemmeta, CONFIG_NAME);
-                    final String title = metaStringProp(itemmeta,CONFIG_TITLE);
-                    final String description = metaStringProp(itemmeta,CONFIG_DESCRIPTION);
+
+                    String propName = metaStringProp(itemmeta, CONFIG_NAME);
+                    pbuild
+                        .name(propName)
+                        .title(metaStringProp(itemmeta, CONFIG_TITLE))
+                        .description(metaStringProp(itemmeta, CONFIG_DESCRIPTION));
+
                     final Object reqValue = itemmeta.get(CONFIG_REQUIRED);
                     final boolean required;
                     if (reqValue instanceof Boolean) {
@@ -111,30 +153,87 @@ public abstract class AbstractDescribableScriptPlugin implements Describable {
                         required = reqValue instanceof String && Boolean.parseBoolean((String) reqValue);
                     }
 
+                    pbuild.required(required);
+
+
                     final Object defObj = itemmeta.get(CONFIG_DEFAULT);
-                    final String defaultValue = null != defObj ? defObj.toString() : null;
-                    if (null == name) {
-                        throw new ConfigurationException("Name required");
+
+                    pbuild.defaultValue(null != defObj ? defObj.toString() : null);
+
+                    final List<String> valueList;
+
+                    final String valuesstr = metaStringProp(itemmeta, CONFIG_VALUES);
+                    if (null != valuesstr) {
+                        final String[] split = null != valuesstr ? valuesstr.split(",") : null;
+                        valueList = Arrays.asList(split);
+                    } else {
+                        Object vlist = itemmeta.get(CONFIG_VALUES);
+                        if (vlist instanceof List) {
+                            valueList = (List<String>) vlist;
+                        } else {
+                            valueList = null;
+                        }
                     }
-                    final String valuesstr = metaStringProp(itemmeta,CONFIG_VALUES);
-                    final String[] split = null != valuesstr ? valuesstr.split(",") : null;
                     final List<String> values;
-                    if(null!=split){
+                    if (null != valueList) {
                         final ArrayList<String> valuesA = new ArrayList<String>();
-                        for (final String s : split) {
+                        for (final String s : valueList) {
                             valuesA.add(s.trim());
                         }
                         values = valuesA;
-                    }else{
-                        values=null;
+                    } else {
+                        values = null;
+                    }
+                    pbuild.values(values);
+
+                    final String scopeString = metaStringProp(itemmeta, CONFIG_SCOPE);
+                    if(null!=scopeString) {
+                        try {
+                            pbuild.scope(PropertyScope.valueOf(scopeString.trim()));
+                        } catch (IllegalArgumentException e) {
+                            throw new ConfigurationException("Invalid property scope: " + scopeString);
+                        }
+                    }
+                    if(useConventionalPropertiesMapping) {
+                        final String projectPropertyPrefix =
+                                PropertyResolverFactory.projectPropertyPrefix
+                                        (
+                                                PropertyResolverFactory
+                                                        .pluginPropertyPrefix(
+                                                                provider.getService(),
+                                                                provider.getName()
+                                                        )
+                                        ) ;
+                        dbuilder.mapping(propName, projectPropertyPrefix + propName);
+
+                        final String frameworkPropertyPrefix =
+                                PropertyResolverFactory.frameworkPropertyPrefix
+                                        (
+                                                PropertyResolverFactory
+                                                        .pluginPropertyPrefix(
+                                                                provider.getService(),
+                                                                provider.getName()
+                                                        )
+                                        );
+
+                        dbuilder.frameworkMapping(propName, frameworkPropertyPrefix + propName);
+                    }
+                    //rendering options
+                    final Object renderingOpts = itemmeta.get(CONFIG_RENDERING_OPTIONS);
+                    if(null != renderingOpts && renderingOpts instanceof Map){
+                        Map<String,Object> renderingOptsMap=(Map<String,Object>) renderingOpts;
+                        pbuild.renderingOptions(renderingOptsMap);
                     }
 
-                    properties.add(PropertyUtil.forType(type, name, title, description, required, defaultValue,
-                        values));
+                    try {
+                        dbuilder.property(pbuild.build());
+                    } catch (IllegalStateException e) {
+                        throw new ConfigurationException(e.getMessage());
+                    }
+
                 }
             }
         }
-        return properties;
     }
 
     private static String metaStringProp(final Map<String, Object> metadata, final String prop) {
@@ -144,47 +243,303 @@ public abstract class AbstractDescribableScriptPlugin implements Describable {
         final Object titleobj = metadata.get(prop);
         return null != titleobj && titleobj instanceof String ? (String) titleobj : defString;
     }
-    protected static Description createDescription(final ScriptPluginProvider provider,
-                                                 final boolean allowCustomProperties) throws ConfigurationException {
-        final String title = metaStringProp(provider.getMetadata(), TITLE_PROP, provider.getName() + " Script Plugin");
-        final String description = metaStringProp(provider.getMetadata(), DESCRIPTION_PROP, "");
-        final List<Property> properties = allowCustomProperties ? createProperties(provider) : null;
-
-        return new AbstractBaseDescription() {
-            public String getName() {
-                return provider.getName();
-            }
-
-            public String getTitle() {
-                return title;
-            }
-
-            public String getDescription() {
-                return description;
-            }
-
-            public List<Property> getProperties() {
-                return properties;
-            }
-        };
+    protected static void createDescription(final ScriptPluginProvider provider,
+                                                   final boolean allowCustomProperties,
+                                                   final DescriptionBuilder builder) throws ConfigurationException {
+        createDescription(provider, allowCustomProperties, false, builder);
     }
+    protected static void createDescription(final ScriptPluginProvider provider,
+                                                   final boolean allowCustomProperties,
+                                                   final boolean useConventionalPropertiesMapping,
+                                                   final DescriptionBuilder builder) throws ConfigurationException {
+        builder
+            .name(provider.getName())
+            .title(metaStringProp(provider.getMetadata(), TITLE_PROP, provider.getName() + " Script Plugin"))
+            .description(metaStringProp(provider.getMetadata(), DESCRIPTION_PROP, ""));
 
-
-    public Description getDescription() {
-        if (null == providerDescription) {
-            try {
-                providerDescription = createDescription(provider, isAllowCustomProperties());
-            } catch (ConfigurationException e) {
-                e.printStackTrace();
-            }
+        if(allowCustomProperties) {
+            createProperties(provider, useConventionalPropertiesMapping, builder);
         }
-        return providerDescription;
     }
 
     /**
-     * Subclasses return true if the script-plugin allows custom configuration properties defined in plugin metadata.
+     * Map node attributes as instance configuration values based on property descriptions.
+     * If a property has a rendering option key of
+     * {@link StringRenderingConstants#INSTANCE_SCOPE_NODE_ATTRIBUTE_KEY}
+     * then use the value of that option as the node attribute name to use.
+     *
+     * @param node        node
+     * @param description plugin description
+     *
+     * @return instance config data
+     */
+    protected Map<String, Object> loadInstanceDataFromNodeAttributes(
+            final INodeEntry node,
+            final Description description
+    )
+    {
+        HashMap<String, Object> config = new HashMap<String, Object>();
+
+        for (Property property : description.getProperties()) {
+
+            Map<String, Object> renderingOptions = property.getRenderingOptions();
+
+            if (null == renderingOptions) {
+                continue;
+            }
+
+            Object o = renderingOptions.get(
+                    StringRenderingConstants.INSTANCE_SCOPE_NODE_ATTRIBUTE_KEY
+            );
+
+            if (null == o || !(o instanceof String)) {
+                continue;
+            }
+
+            String attribute = (String) o;
+
+            String s = node.getAttributes().get(attribute);
+
+            if (s == null) {
+                continue;
+            }
+
+            config.put(property.getName(), s);
+        }
+        return config;
+    }
+
+    /**
+     * Loads the plugin configuration values stored in project or framework properties, also
+     *
+     * @param context          execution context
+     * @param localDataContext current context data
+     * @param description plugin description
+     * @param instanceData instance data
+     *
+     * @param serviceName service name
+     * @return context data with a new "config" entry containing the loaded plugin config
+     *         properties.
+     * @throws ConfigurationException configuration error
+     */
+    protected Map<String, Map<String, String>> loadConfigData(
+            final ExecutionContext context,
+            final Map<String, Object> instanceData,
+            final Map<String, Map<String, String>> localDataContext,
+            final Description description,
+            final String serviceName
+    ) throws ConfigurationException
+    {
+
+        final PropertyResolver resolver = PropertyResolverFactory.createPluginRuntimeResolver(
+                context,
+                instanceData,
+                serviceName,
+                getProvider().getName()
+        );
+
+        final Map<String, Object> config =
+                PluginAdapterUtility.mapDescribedProperties(
+                        resolver,
+                        description,
+                        PropertyScope.Instance
+                );
+
+        //expand properties
+        Map<String, Object> expanded =
+                DataContextUtils.replaceDataReferences(
+                        config,
+                        localDataContext
+                );
+
+        Map<String, String> data = toStringStringMap(expanded);
+
+        loadContentConversionPropertyValues(
+                data,
+                context,
+                description.getProperties()
+        );
+
+
+        return DataContextUtils.addContext("config", data, localDataContext);
+    }
+
+    /**
+     * Looks for properties with content conversion, and converts the values
+     *
+     * @param data             map of values for config properties
+     * @param context          execution context
+     * @param pluginProperties definition of plugin properties
+     */
+    private void loadContentConversionPropertyValues(
+            final Map<String, String> data,
+            final ExecutionContext context,
+            final List<Property> pluginProperties
+    ) throws ConfigurationException
+    {
+        //look for "valueConversion" properties
+        for (Property property : pluginProperties) {
+            String name = property.getName();
+            String propValue = data.get(name);
+            if (null == propValue) {
+                continue;
+            }
+            Map<String, Object> renderingOptions = property.getRenderingOptions();
+            if (renderingOptions != null) {
+                Object conversion = renderingOptions.get(StringRenderingConstants.VALUE_CONVERSION_KEY);
+
+                if (StringRenderingConstants.ValueConversion.STORAGE_PATH_AUTOMATIC_READ.equalsOrString(conversion)) {
+                    convertStoragePathValue(data, context.getStorageTree(), name, propValue, renderingOptions);
+                } else if (StringRenderingConstants.ValueConversion.PRIVATE_DATA_CONTEXT.equalsOrString(conversion)) {
+                    convertPrivateDataValue(data, context.getPrivateDataContext(), name, propValue, renderingOptions);
+                }
+            }
+        }
+    }
+
+    /**
+     * Converts storage path properties by loading the values into the config data.
+     * @param data config data
+     * @param storageTree storage
+     * @param name property name
+     * @param propValue value to convert
+     * @param renderingOptions options
+     * @throws ConfigurationException
+     */
+    private void convertStoragePathValue(
+            final Map<String, String> data,
+            final StorageTree storageTree,
+            final String name,
+            final String propValue,
+            final Map<String, Object> renderingOptions
+    ) throws ConfigurationException
+    {
+        //a storage path property
+        String root = null;
+        if (null != renderingOptions.get( StringRenderingConstants.STORAGE_PATH_ROOT_KEY)) {
+            root = renderingOptions.get(StringRenderingConstants.STORAGE_PATH_ROOT_KEY).toString();
+        }
+        String filter = null;
+        if (null != renderingOptions.get(StringRenderingConstants.STORAGE_FILE_META_FILTER_KEY)) {
+            filter = renderingOptions.get(StringRenderingConstants.STORAGE_FILE_META_FILTER_KEY).toString();
+        }
+        boolean clearValue = isValueConversionFailureRemove(renderingOptions);
+        if (null != root && !PathUtil.hasRoot(propValue, root)) {
+            if(clearValue) {
+                data.remove(name);
+            }
+            return;
+        }
+        try {
+            Resource<ResourceMeta> resource = storageTree.getResource(propValue);
+            ResourceMeta contents = resource.getContents();
+            //test filter
+            if (filter != null) {
+                String[] filterComponents = filter.split("=", 2);
+                if (filterComponents.length == 2) {
+                    String key = filterComponents[0];
+                    String test = filterComponents[1];
+                    Map<String, String> meta = contents.getMeta();
+                    if (meta == null || !test.equals(meta.get(key))) {
+                        if(clearValue) {
+                            data.remove(name);
+                        }
+                        return;
+                    }
+                }
+            }
+            //finally load storage contents into a string
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            contents.writeContent(byteArrayOutputStream);
+            data.put(name, new String(byteArrayOutputStream.toByteArray()));
+        } catch (StorageException | IOException e) {
+            if(clearValue) {
+                data.remove(name);
+                return;
+            }
+            throw new ConfigurationException("Unable to load configuration key '" +
+                    name + "' value from storage path:  " + propValue, e);
+        }
+    }
+
+    /**
+     * Converts properties that refer to a private data context value
+     * @param data config data
+     * @param privateDataContext private data
+     * @param name property name
+     * @param propValue value to convert
+     */
+    private void convertPrivateDataValue(
+            final Map<String, String> data,
+            final Map<String, Map<String, String>> privateDataContext,
+            final String name,
+            final String propValue,
+            final Map<String, Object> renderingOptions
+    ) throws ConfigurationException
+    {
+        boolean clearValue = isValueConversionFailureRemove(renderingOptions);
+        String[] prop = propValue.split("\\.", 2);
+        if (prop.length < 2 || prop[0].length() < 1 || prop[1].length() < 1) {
+
+            throw new ConfigurationException(
+                    "Unable to load '" +
+                    name +
+                    "' configuration value: Expected 'option.name' format, but saw: " +
+                    propValue
+            );
+        }
+        String newvalue = DataContextUtils.resolve(privateDataContext, prop[0], prop[1]);
+
+        if (null == newvalue) {
+            if(clearValue) {
+                data.remove(name);
+            }
+            return;
+        }
+        data.put(name, newvalue);
+    }
+
+    private boolean isValueConversionFailureRemove(final Map<String, Object> renderingOptions) {
+        return StringRenderingConstants.VALUE_CONVERSION_FAILURE_REMOVE.equals(
+                renderingOptions.get(
+                        StringRenderingConstants.VALUE_CONVERSION_FAILURE_KEY
+                )
+        );
+    }
+
+    private static Map<String, String> toStringStringMap(Map input) {
+        Map<String, String> map = new HashMap<String, String>();
+        for (Object o : input.keySet()) {
+            map.put(o.toString(), input.get(o) != null ? input.get(o).toString() : "");
+        }
+        return map;
+    }
+
+
+    @Override
+    public Description getDescription() {
+        if(null==description){
+            final DescriptionBuilder builder = DescriptionBuilder.builder();
+            try {
+                createDescription(provider, isAllowCustomProperties(), isUseConventionalPropertiesMapping(), builder);
+            } catch (ConfigurationException e) {
+                e.printStackTrace();
+            }
+            description = builder.build();
+        }
+        return description;
+    }
+
+    /**
+     * @return true if the script-plugin allows custom configuration properties defined in plugin metadata.
      */
     public abstract boolean isAllowCustomProperties();
+    /**
+     * @return true to provide conventional mapping from config properties to framework/project properties.
+     */
+    public boolean isUseConventionalPropertiesMapping(){
+        return false;
+    }
 
     public ScriptPluginProvider getProvider() {
         return provider;

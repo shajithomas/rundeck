@@ -25,6 +25,7 @@ package com.dtolabs.rundeck.core.authorization.providers;
 
 import java.util.Collections;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Policy is contains a set of {@link AclContext} with corresponding usernames and/or groups
@@ -44,30 +45,32 @@ public interface Policy {
     AclContext getContext();
 
     /**
-     * Return a list of usernames as strings associated with this policy.  The backing set should 
-     * rely on the natural sorting order of HashSet<String> otherwise unexpect behavior will occur.  
-     * 
-     * See {@link Collections#disjoint(java.util.Collection, java.util.Collection)} if you need
-     * to muck with the ordering.
+     * Return a list of usernames as strings associated with this policy.
      * 
      * @return usernames
      */
     public Set<String> getUsernames();
 
     /**
+     * @return regexes for username matching
+     */
+    public Set<Pattern> getUsernamePatterns();
+
+    /**
      * 
-     * Return a list of group objects associated with this policy.  The backing set should rely on
-     * the natural sorting order of HashSet<String> otherwise unexpect behavior will occur.  
-     * 
-     * See {@link Collections#disjoint(java.util.Collection, java.util.Collection)} if you need
-     * to muck with the ordering.
+     * Return a list of group objects associated with this policy.
      * 
      * @return groups
      */
-    public Set<Object> getGroups();
+    public Set<String> getGroups();
 
     /**
-     * Return the environmental context to test the Policy against an input environment
+     * @return regexes  for group matching
+     */
+    public Set<Pattern> getGroupPatterns();
+
+    /**
+     * @return the environmental context to test the Policy against an input environment
      *
      */
     public EnvironmentalContext getEnvironment();

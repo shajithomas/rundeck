@@ -16,121 +16,161 @@
 
 package com.dtolabs.rundeck.core.common;
 
-import com.dtolabs.rundeck.core.utils.IPropertyLookup;
-import com.dtolabs.rundeck.core.utils.PropertyLookup;
 import org.apache.log4j.Logger;
 
 import java.io.File;
 import java.util.*;
 
 /**
- * DepotMgr is a framework resource that provides interfaces for looking up other resources such
- * as {@link FrameworkType} {@link FrameworkResourceInstance}, etc.
+ * Filesystem based project manager
  */
 public class FrameworkProjectMgr extends FrameworkResourceParent implements IFrameworkProjectMgr {
+    static final String PROJECTMGR_NAME = "frameworkProjectMgr";
 
     public static final Logger log = Logger.getLogger(FrameworkProjectMgr.class);
 
-    private final Framework framework;
-
-    private final IPropertyLookup lookup;
-
-    /**
-     * Factory method.
-     *
-     * @param name      Name of manager. informational purposes
-     * @param baseDir   Basedir where child resources live
-     * @param framework Framework instance
-     */
-    public static FrameworkProjectMgr create(final String name, final File baseDir, final Framework framework) {
-        return new FrameworkProjectMgr(name, baseDir, framework);
-    }
+    private final FilesystemFramework filesystemFramework;
+    private IProjectNodesFactory nodesFactory;
 
 
     /**
      * Base constructor
      *
-     * @param name       Name of manager. informational purposes
-     * @param baseDir    Basedir where child resources live
-     * @param framework  Framework instance
-     * @param initialize If true, calls {@link #initialize()} method.
+     * @param name                Name of manager. informational purposes
+     * @param baseDir             Basedir where child resources live
+     * @param filesystemFramework Framework instance
      */
-    private FrameworkProjectMgr(final String name, final File baseDir, final Framework framework) {
-        super(name, baseDir, framework);
-        this.framework = framework;
-        lookup = PropertyLookup.create(framework.getPropertyLookup());
+    FrameworkProjectMgr(
+            final String name,
+            final File baseDir,
+            final FilesystemFramework filesystemFramework,
+            final IProjectNodesFactory nodesFactory
+    )
+    {
+        super(name, baseDir, null);
+        this.filesystemFramework = filesystemFramework;
+        this.nodesFactory=nodesFactory;
+    }
+
+    static FrameworkProjectMgr create(
+            final String name,
+            final File baseDir,
+            final Framework framework,
+            final IProjectNodesFactory nodesFactory
+    )
+    {
+        return FrameworkFactory.createProjectManager(baseDir, framework.getFilesystemFramework(), nodesFactory);
     }
 
 
-
-
-
-
     /**
-     * Add a new project to the map. Checks if project has its own module library and creates
-     * a ModuleLookup object accordingly.
      *
      * @param projectName Name of the project
      */
-    public FrameworkProject createFrameworkProject(final String projectName) {
-        final FrameworkProject project = createFrameworkProjectInt(projectName);
+    public IRundeckProject createFrameworkProject(final String projectName) {
 
-        return project;
+        return createFrameworkProjectInt(projectName);
     }
     /**
-     * Add a new project to the map. Checks if project has its own module library and creates
-     * a ModuleLookup object accordingly.
      *
      * @param projectName Name of the project
-     * @param properties additional properties to include in the project's properties file
      */
-    public FrameworkProject createFrameworkProject(final String projectName, final Properties properties) {
-        final FrameworkProject project = createFrameworkProjectInt(projectName,properties);
+    public FrameworkProject createFSFrameworkProject(final String projectName) {
 
-        return project;
+        return createFrameworkProjectInt(projectName);
+    }
+
+    public FilesystemFramework getFilesystemFramework() {
+        return filesystemFramework;
+    }
+
+    public IRundeckProject createFrameworkProject(final String projectName, final Properties properties) {
+
+        return createFrameworkProjectInt(projectName,properties,false);
+    }
+
+    /**
+     * Create a new project if it doesn't, otherwise throw exception
+     * @param projectName name of project
+     * @param properties config properties
+     * @return new project
+     * @throws IllegalArgumentException if the project already exists
+     */
+    @Override
+    public IRundeckProject createFrameworkProjectStrict(final String projectName, final Properties properties) {
+
+        return createFrameworkProjectInt(projectName,properties,true);
     }
 
     final HashMap<String,FrameworkProject> projectCache= new HashMap<String, FrameworkProject>();
     /**
-     * Create a project object without adding to child map
-     * @param projectName
-     * @return
+     * @return Create a project object without adding to child map
+     * @param projectName name of project
      */
     private FrameworkProject createFrameworkProjectInt(final String projectName) {
-        return createFrameworkProjectInt(projectName, null);
+        return createFrameworkProjectInt(projectName, null,false);
     }
+
     /**
-     * Create a project object without adding to child map
-     * @param projectName
-     * @return
+     * @return Create a project object without adding to child map
+     * @param projectName name
+     * @param properties properties
+     * @param strict true for strict exists check
+     * @throws java.lang.IllegalArgumentException if strict is true and the project already exists
      */
-    private FrameworkProject createFrameworkProjectInt(final String projectName,final Properties properties) {
+    private FrameworkProject createFrameworkProjectInt(final String projectName,final Properties properties,
+            boolean strict) {
         final FrameworkProject project;
+        if (strict && existsFrameworkProject(projectName)) {
+            throw new IllegalArgumentException("project exists: " + projectName);
+        }
         synchronized (projectCache) {
             if (null != projectCache.get(projectName)) {
                 return projectCache.get(projectName);
             }
             // check if the FrameworkProject has its own module library
-            project= FrameworkProject.create(projectName, getBaseDir(), this, properties);
+            project = FrameworkFactory.createFrameworkProject(
+                    projectName,
+                    new File(getBaseDir(), projectName),
+                    filesystemFramework,
+                    this,
+                    nodesFactory,
+                    properties
+            );
+
             projectCache.put(projectName, project);
         }
         return project;
     }
 
     /**
-     * returns a collection of Depot objects
-     *
-     * @return
+     * Remove a project definition
+     * @param projectName name of the project
      */
-    public Collection listFrameworkProjects() {
-        return listChildren();
+    @Override
+    public void removeFrameworkProject(final String projectName){
+        synchronized (projectCache) {
+            super.remove(projectName);
+            projectCache.remove(projectName);
+        }
     }
 
     /**
-     * Looks for name as an existing Depot object and returns it
+     * @return a collection of Project objects
+     */
+    public Collection<IRundeckProject> listFrameworkProjects() {
+        return listChildren();
+    }
+
+    @Override
+    public Collection<String> listFrameworkProjectNames() {
+        return new TreeSet<>(listChildNames());
+    }
+
+    /**
+     * @return an existing Project object and returns it
      *
      * @param name The name of the project
-     * @return
      */
     public FrameworkProject getFrameworkProject(final String name) {
         try {
@@ -140,25 +180,33 @@ public class FrameworkProjectMgr extends FrameworkResourceParent implements IFra
         }
     }
 
+    @Override
+    public IRundeckProjectConfig loadProjectConfig(final String projectName) {
+        return FrameworkFactory.loadFrameworkProjectConfig(
+                projectName,
+                new File(getBaseDir(), projectName),
+                filesystemFramework,
+                null
+        );
+    }
+
     /**
-     * Determines if Depot exists in framework.
+     * @return true if project exists in framework.
      *
      * @param project The name of the project
-     * @return
      */
     public boolean existsFrameworkProject(final String project) {
         if (null == project) throw new IllegalArgumentException("project paramater was null");
         return existsChild(project);
     }
 
+    @Override
+    public boolean childCouldBeLoaded(final String name) {
+        return super.childCouldBeLoaded(name) && new File(getBaseDir(), name + "/etc/project.properties").exists();
+    }
 
-    /**
-     * Prints internal state info for debugging purposes
-     *
-     * @return
-     */
     public String toString() {
-        return "DepotMgr{" +
+        return "FrameworkProjectMgr{" +
                 "name=" + getName() +
                 ", baseDir=" + getBaseDir() +
                 "}";
@@ -169,13 +217,8 @@ public class FrameworkProjectMgr extends FrameworkResourceParent implements IFra
         return new Properties();
     }
 
-    public File getPropertyFile() {
-        throw new UnsupportedOperationException("FrameworkProjectMgr should not have its own property file");
-    }
-
-
     public IFrameworkResource createChild(final String projectName) {
-        return createFrameworkProject(projectName);
+        return createFSFrameworkProject(projectName);
     }
 
     public IFrameworkResource loadChild(String name) {
@@ -187,56 +230,4 @@ public class FrameworkProjectMgr extends FrameworkResourceParent implements IFra
     }
 
 
-    public Framework getFramework() {
-        return framework;
-    }
-
-    /**
-     * Checks if objects must be registered in the resources.properties file
-     *
-     * @param projectName Name of project to check
-     * @return true if registration is required
-     */
-    public boolean isConfiguredObjectDeploymentsCheck(final String projectName) {
-        if (existsFrameworkProject(projectName)) {
-            final FrameworkProject d = getFrameworkProject(projectName);
-            return d.hasProperty("project.resources.check");
-        } else {
-            throw new FrameworkResourceException("project not found: " + projectName, this);
-        }
-    }
-
-
-
-
-    /**
-     * get property value
-     *
-     * @param key the name of the property
-     * @return property value
-     */
-    public String getProperty(final String key) {
-        return lookup.getProperty(key);
-    }
-
-    /**
-     * checks if property value exists
-     *
-     * @param key name of the property
-     * @return true if it exists; false otherwise
-     */
-    public boolean hasProperty(final String key) {
-        return lookup.hasProperty(key);
-    }
-
-    /**
-     * Retrieves map of property data
-     *
-     * @return {@link java.util.Map} containing property key/value pair
-     * @throws com.dtolabs.rundeck.core.utils.PropertyLookupException
-     *          thrown if loaderror
-     */
-    public Map getPropertiesMap() {
-        return lookup.getPropertiesMap();
-    }
 }

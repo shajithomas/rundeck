@@ -1,44 +1,40 @@
+/**
+ * The Rundeck plugins parent project
+ */
 
-allprojects{
-    version = '1.4.4-dev'
-    defaultTasks 'clean','build'
-    ext.rundeckPluginVersion= '1.0'
-}
-task wrapper(type: Wrapper) {
-    gradleVersion = '1.0'
-}
 
+eclipse.project.name =  "${project.getParent().eclipse.project.name}:plugins";
+
+ext.rundeckPluginVersion= '1.1'
 subprojects{
-    //applies to all the plugin sub projects
-    apply plugin: 'java'
-    sourceCompatibility = 1.5
+
+
+    defaultTasks 'clean','build'
     archivesBaseName = "rundeck-$project.name"
 
-    repositories {
-        mavenCentral()
-    }
-
     dependencies {
-        compile files("${rootProject.projectDir}/../core/build/libs/rundeck-core-${version}.jar")
-        testCompile(
-            //[group: 'junit', name: 'junit', version: '3.8.1',ext:'jar']
-        )
+        compile project(":core")
     }
+    
     jar {
         manifest {
-            attributes 'Rundeck-Plugin-Version': rundeckPluginVersion, 'Rundeck-Plugin-Archive': 'true', 'Rundeck-Plugin-File-Version': version
+            attributes 'Rundeck-Plugin-Version': rundeckPluginVersion, 
+                       'Rundeck-Plugin-Archive': 'true', 
+                       'Rundeck-Plugin-File-Version': version,
+                       'Rundeck-Plugin-Author': 'SimplifyOps, Inc.',
+                       'Rundeck-Plugin-URL': 'http://rundeck.org',
+                       'Rundeck-Plugin-BuildDate': new Date().toString()
         }
     }
-
 }
+apply plugin: 'maven';
 
 
-apply plugin: 'maven'
 task createPom << {
     pom {
         project {
             artifactId 'rundeck-bundled-plugins'
-            groupId "com.dtolabs.rundeck"
+            groupId project.group
             inceptionYear '2011'
             packaging 'pom'
             version version
@@ -54,11 +50,13 @@ task createPom << {
             modules{
                 module 'stub-plugin'
                 module 'script-plugin'
+                module 'localexec-plugin'
+                module 'copyfile-plugin'
             }
             dependencies{
                 dependency{
                     artifactId 'rundeck-core'
-                    groupId 'com.dtolabs.rundeck'
+                    groupId project.group
                     version version
                 }
             }
@@ -84,8 +82,8 @@ task createPom << {
                         artifactId 'maven-compiler-plugin'
                         version '2.3.2'
                         configuration{
-                            'source'('1.6')
-                            'target'('1.6')
+                            'source'('1.7')
+                            'target'('1.7')
                         }
                     }
                 }

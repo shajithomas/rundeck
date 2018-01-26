@@ -1,18 +1,24 @@
+<%@ page import="grails.util.Environment" %>
 <html>
 <head>
     <g:set var="rkey" value="${g.rkey()}" />
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
     <meta name="layout" content="base"/>
     <meta name="tabpage" content="jobs"/>
-    <title><g:message code="gui.menu.Workflows"/></title>
+    <title><g:message code="gui.menu.Workflows"/> - <g:enc>${params.project ?: request.project}</g:enc></title>
     <g:javascript library="yellowfade"/>
     <g:javascript library="pagehistory"/>
     <g:javascript library="prototype/effects"/>
     <g:javascript library="executionOptions"/>
+    <asset:javascript src="menu/jobs.js"/>
+    <g:embedJSON id="pageParams" data="${[project:params.project?:request.project]}"/>
+    <g:jsMessages code="Node,Node.plural,job.starting.execution"/>
+    <!--[if (gt IE 8)|!(IE)]><!--> <g:javascript library="ace/ace"/><!--<![endif]-->
     <script type="text/javascript">
-
+        /** knockout binding for activity */
+        var pageActivity;
         function showError(message){
-             $('error').innerHTML+=message;
+             appendText($('error'),message);
              $("error").show();
         }
         var _jobExecUnloadHandlers=new Array();
@@ -26,9 +32,10 @@
                 }
                 _jobExecUnloadHandlers.clear();
             }
-            $('execDiv').hide();
-            $('indexMain').show();
-            $('execDivContent').innerHTML='';
+
+            jQuery('#execDiv').modal('hide');
+            clearHtml('execDivContent');
+
             $('busy').hide();
         }
         function requestError(item,trans){
@@ -36,42 +43,39 @@
             showError("Failed request: "+item+" . Result: "+trans.getStatusText());
         }
         function loadExec(id,eparams) {
-            $('busy').innerHTML = '<img src="' + appLinks.iconSpinner + '" alt=""/> Loading...';
-            $('busy').show();
             $("error").hide();
             var params=eparams;
             if(!params){
                 params={id:id};
             }
-            new Ajax.Updater(
-                'execDivContent',
-                '${createLink(controller:"scheduledExecution",action:"executeFragment")}', {
-                parameters: params,
-                evalScripts:true,
-                onComplete: function(transport) {
-                    if (transport.request.success()) {
-                        loadedFormSuccess();
-                    }
-                },
-                onFailure: requestError.curry("executeFragment for [" + id + "]")
+            jQuery('#execDivContent').load(_genUrl(appLinks.scheduledExecutionExecuteFragment, params),function(response,status,xhr){
+                if (status=='success') {
+                    loadedFormSuccess(!!id);
+                } else{
+                    requestError("executeFragment for [" + id + "]",xhr);
+                }
             });
-
         }
         function execSubmit(elem){
             var params=Form.serialize(elem);
             new Ajax.Request(
-                '${createLink(controller:"scheduledExecution",action:"runJobInline")}', {
+                appLinks.scheduledExecutionRunJobInline, {
                 parameters: params,
                 evalScripts:true,
                 onComplete: function(trans) {
                     var result={};
                     if(trans.responseJSON){
                         result=trans.responseJSON;
-                    }else if(trans.responseText){
-                        result=eval(trans.responseText);
                     }
                     if(result.id){
-                        unloadExec();
+                        if (result.follow && result.href) {
+                            document.location = result.href;
+                        }else{
+                            if(!pageActivity.selected()){
+                                pageActivity.activateNowRunningTab();
+                            }
+                            unloadExec();
+                        }
                     }else if(result.error==='invalid'){
                         //reload form for validation
                         loadExec(null,params+"&dovalidate=true");
@@ -83,7 +87,7 @@
                 onFailure: requestError.curry("runJobInline")
             });
         }
-        function loadedFormSuccess(){
+        function loadedFormSuccess(doShow){
             if ($('execFormCancelButton')) {
                 Event.observe($('execFormCancelButton'),'click',function(evt) {
                     Event.stop(evt);
@@ -96,11 +100,13 @@
                 Event.observe($('execFormRunButton'),'click', function(evt) {
                     Event.stop(evt);
                     execSubmit('execDivContent');
+                    $('formbuttons').loading(message('job.starting.execution'));
                     return false;
                 },false);
             }
-            $('indexMain').hide();
-            $('execDiv').show();
+            if(doShow){
+                jQuery('#execDiv').modal('show');
+            }
             $('busy').hide();
         }
 
@@ -109,39 +115,17 @@
 
         //set box filterselections
 
-        function _setFilterSuccess(response,name){
-            var data=eval("("+response.responseText+")"); // evaluate the JSON;
+        function _setFilterSuccess(data,name){
             if(data){
                 var bfilters=data.filterpref;
                 //reload page
-                document.location="${createLink(controller:'menu',action:'workflows')}"+(bfilters[name]?"?filterName="+encodeURIComponent(bfilters[name]):'');
+                document.location=_genUrl(appLinks.menuJobs , bfilters[name] ? {filterName:bfilters[name]} : {});
             }
-        }
-        function setFilter(name,value){
-            if(!value){
-                value="!";
-            }
-            var str=name+"="+value;
-            new Ajax.Request("${createLink(controller:'user',action:'addFilterPref')}",{parameters:{filterpref:str}, evalJSON:true,onSuccess:function(response){
-                _setFilterSuccess(response,name);
-            }});
         }
 
 
-        /** START history
-         *
-         */
-        var histControl = new HistoryControl('histcontent',{compact:true,nofilters:true,recentFilter:'1d',projFilter:'${session.project}'});
-        function loadHistory(){
-            histControl.loadHistory();
-        }
         /** now running section update */
-        var savedcount=0;
         function _pageUpdateNowRunning(count){
-            if(count!==savedcount){
-                savedcount=count;
-                loadHistory();
-            }
         }
         var lastRunExec=0;
         /**
@@ -153,23 +137,8 @@
             }
             if (name == 'nowrunning' && data.lastExecId && data.lastExecId != lastRunExec) {
                 lastRunExec = data.lastExecId;
-                loadHistory();
             }
         }
-
-        //now running
-        var runupdate;
-        function loadNowRunning(){
-            runupdate=new Ajax.PeriodicalUpdater({success:'nowrunning'},'${createLink(controller:"menu",action:"nowrunningFragment")}',{
-                evalScripts:true,
-                parameters:{projFilter:'${session.project}'},
-                onFailure:function (response) {
-                    showError("AJAX error: Now Running ["+ runupdate.url+"]: "+response.status+" "+response.statusText);
-                    runupdate.stop();
-                }
-            });
-        }
-
 
         /////////////
         // Job context detail popup code
@@ -211,9 +180,9 @@
             if(popvis && lastHref===elem.href){
                 return;
             }
-            var delay=50;
+            var delay=1500;
             if(popvis){
-                delay=50;
+                delay=0;
             }
             motimer=setTimeout(showJobDetails.curry(elem),delay);
         }
@@ -221,7 +190,9 @@
             if(popvis && $('jobIdDetailHolder')){
                 popvis=false;
                 Try.these(
-//                    function(){Effect.Fade($('jobIdDetailHolder'),{duration:0.5});},
+                    function(){
+                        jQuery('#jobIdDetailHolder').fadeOut('fast');
+                    },
                     function(){$('jobIdDetailHolder').hide();}
                     );
             }
@@ -237,12 +208,12 @@
                 motimer=null;
             }
             doshow=false;
-            mltimer=setTimeout(doMouseout,500);
+            mltimer=setTimeout(doMouseout,0);
         }
         function showJobDetails(elem){
             //get url
-            var href=elem.href;
-            var match=href.match(/\/job\/show\/(.+)$/);
+            var href=elem.href || elem.getAttribute('data-href');
+            var match=href.match(/\/job\/.+?\/(.+)$/);
             if(!match){
                 return;
             }
@@ -252,11 +223,15 @@
             var matchId=match[1];
             var viewdom=$('jobIdDetailHolder');
             var bcontent=$('jobIdDetailContent');
+            if(viewdom){
+                viewdom.parentNode.removeChild(viewdom);
+                viewdom=null;
+            }
             if(!viewdom){
                 viewdom = $(document.createElement('div'));
                 viewdom.addClassName('bubblewrap');
                 viewdom.setAttribute('id','jobIdDetailHolder');
-                viewdom.setAttribute('style','display:none;');
+                viewdom.setAttribute('style','display:none;width:600px;height:250px;');
 
                 Event.observe(viewdom,'click',function(evt){
                     evt.stopPropagation();
@@ -274,40 +249,87 @@
                 Event.observe(viewdom,'mouseout',jobLinkMouseout.curry(viewdom));
             }
             bcontent.loading();
-
-
-            new Ajax.Updater('jobIdDetailContent','${createLink(controller:'scheduledExecution',action:'detailFragment')}',{
-                parameters:{id:matchId},
-                evalScripts:true,
-                onComplete: function(trans){
-                    if(trans.request.success()){
-                        popJobDetails(elem);
+            var jobNodeFilters;
+            jQuery.ajax({
+                dataType:'json',
+                url:_genUrl(appLinks.scheduledExecutionDetailFragmentAjax, {id: matchId}),
+                success:function(data,status,xhr){
+                    var params={};
+                    if(data.job && data.job.doNodeDispatch) {
+                        if (data.job.filter) {
+                            params.filter = data.job.filter;
+                        }
+                    }else{
+                        params.localNodeOnly=true;
+                        params.emptyMode='localnode';
                     }
-                },
-                onFailure: function(trans){
-                    bcontent.innerHTML='';
-                    viewdom.hide();
+                    jobNodeFilters=initJobNodeFilters(params);
                 }
-            });
+            }).done(
+                    function(){
+                        jQuery('#jobIdDetailContent').load(_genUrl(appLinks.scheduledExecutionDetailFragment, {id: matchId}),
+                                function(response,status,xhr){
+                            if (status=='success') {
+                                var wrapDiv = jQuery('#jobIdDetailHolder').find('.ko-wrap')[0];
+                                if(wrapDiv) {
+                                    ko.applyBindings(jobNodeFilters, wrapDiv);
+                                }
+                                popJobDetails(elem);
+                                $('jobIdDetailContent').select('.apply_ace').each(function (t) {
+                                    _applyAce(t);
+                                });
+                            }else{
+                                clearHtml(bcontent);
+                                viewdom.hide();
+                            }
+                        });
+                    }
+            );
+
         }
+
         function initJobIdLinks(){
-            $$('a.jobIdLink').each(function(e){
+            $$('.hover_show_job_info').each(function(e){
                 Event.observe(e,'mouseover',jobLinkMouseover.curry(e));
                 Event.observe(e,'mouseout',jobLinkMouseout.curry(e));
             });
+
+            jQuery('.act_job_action_dropdown').click(function(){
+                var id=jQuery(this).data('jobId');
+                var el=jQuery(this).parent().find('.dropdown-menu');
+                el.load(
+                    _genUrl(appLinks.scheduledExecutionActionMenuFragment,{id:id})
+                );
+            });
         }
          function filterToggle(evt) {
-            ['${rkey}filter','${rkey}filter-toggle'].each(Element.toggle);
-            ['outsidefiltersave'].each($('${rkey}filter').visible()?Element.hide:Element.show);
+            ['${enc(js:rkey)}filter','${enc(js:rkey)}filter-toggle'].each(Element.toggle);
         }
         function filterToggleSave(evt) {
-            ['${rkey}filter','${rkey}fsave'].each(Element.show);
-            ['${rkey}filter-toggle','${rkey}fsavebtn'].each(Element.hide);
-            ['outsidefiltersave'].each($('${rkey}filter').visible()?Element.hide:Element.show);
+            ['${enc(js:rkey)}filter','${enc(js:rkey)}fsave'].each(Element.show);
+            ['${enc(js:rkey)}filter-toggle','${enc(js:rkey)}fsavebtn'].each(Element.hide);
         }
         function init(){
-            loadNowRunning();
+            <g:if test="${!(grailsApplication.config.rundeck?.gui?.enableJobHoverInfo in ['false',false])}">
             initJobIdLinks();
+            </g:if>
+
+            PageActionHandlers.registerHandler('job_delete_single',function(el){
+                bulkeditor.activateActionForJob(bulkeditor.DELETE,el.data('jobId'));
+            });
+            PageActionHandlers.registerHandler('enable_job_execution_single',function(el){
+                bulkeditor.activateActionForJob(bulkeditor.ENABLE_EXECUTION,el.data('jobId'));
+            });
+            PageActionHandlers.registerHandler('disable_job_execution_single',function(el){
+                bulkeditor.activateActionForJob(bulkeditor.DISABLE_EXECUTION,el.data('jobId'));
+            });
+            PageActionHandlers.registerHandler('disable_job_schedule_single',function(el){
+                bulkeditor.activateActionForJob(bulkeditor.DISABLE_SCHEDULE,el.data('jobId'));
+            });
+            PageActionHandlers.registerHandler('enable_job_schedule_single',function(el){
+                bulkeditor.activateActionForJob(bulkeditor.ENABLE_SCHEDULE,el.data('jobId'));
+            });
+
             Event.observe(document.body,'click',function(evt){
                 //click outside of popup bubble hides it
                 doMouseout();
@@ -327,7 +349,133 @@
                 Event.observe(e, 'click', filterToggleSave);
             });
         }
-        Event.observe(window,'load',init);
+        /**
+         * Possible actions for bulk edit jobs, to present in modal dialog
+         * @constructor
+         */
+        function BulkEditor(){
+            var self=this;
+            self.DISABLE_SCHEDULE = 'disable_schedule';
+            self.ENABLE_SCHEDULE = 'enable_schedule';
+            self.ENABLE_EXECUTION= 'enable_execution';
+            self.DISABLE_EXECUTION= 'disable_execution';
+            self.DELETE= 'delete';
+            self.action=ko.observable(null);
+            self.enabled=ko.observable(false);
+            self.beginEdit=function(){
+                self.expandAllComponents();
+                self.enabled(true);
+            };
+            self.cancelEdit=function(){
+                self.enabled(false);
+                self.selectNone();
+            };
+            self.disableSchedule=function(){
+
+                self.action(self.DISABLE_SCHEDULE);
+            };
+            self.isDisableSchedule=ko.pureComputed(function(){
+                return self.action()===self.DISABLE_SCHEDULE;
+            });
+            self.enableSchedule=function(){
+                self.action(self.ENABLE_SCHEDULE);
+            };
+            self.isEnableSchedule=ko.pureComputed(function(){
+                return self.action()===self.ENABLE_SCHEDULE;
+            });
+            self.enableExecution=function(){
+                self.action(self.ENABLE_EXECUTION);
+            };
+            self.isEnableExecution=ko.pureComputed(function(){
+                return self.action()===self.ENABLE_EXECUTION;
+            });
+            self.disableExecution=function(){
+                self.action(self.DISABLE_EXECUTION);
+            };
+            self.isDisableExecution=ko.pureComputed(function(){
+                return self.action()===self.DISABLE_EXECUTION;
+            });
+            self.actionDelete=function(){
+                self.action(self.DELETE);
+            };
+            self.isDelete=ko.pureComputed(function(){
+                return self.action()===self.DELETE;
+            });
+            self.cancel=function(){
+                self.action(null);
+            };
+
+            self.setCheckboxValues=function(ids){
+                //check only the checkbox with this job id by passing an array
+                jQuery('.jobbulkeditfield :input[name=ids]').val(ids);
+            };
+            self.checkboxesForGroup=function(group){
+                return jQuery('.jobbulkeditfield input[type=checkbox][data-job-group="'+group+'"]');
+            };
+            self.allCheckboxes=function(group){
+                return jQuery('.jobbulkeditfield input[type=checkbox]');
+            };
+            self.jobGroupSelectAll=function(e){
+                var jgroup=jQuery(e).data('job-group');
+                if(jgroup){
+                    self.checkboxesForGroup(jgroup).prop('checked', true);
+                }
+            };
+
+            self.jobGroupSelectNone=function(e){
+                var jgroup=jQuery(e).data('job-group');
+                if(jgroup){
+                    self.checkboxesForGroup(jgroup).prop('checked', false);
+                }
+            };
+            self.expandAllComponents=function(){
+                jQuery('.expandComponent').show();
+            };
+            self.collapseAllComponents=function(){
+                jQuery('.topgroup .expandComponent').hide();
+            };
+            self.selectAll=function(){
+                self.expandAllComponents();
+                self.allCheckboxes().prop('checked', true);
+            };
+            self.selectNone=function(){
+                self.expandAllComponents();
+                self.allCheckboxes().prop('checked', false);
+            };
+            self.toggleModal=function(){
+                jQuery('#bulk_del_confirm').modal('toggle');
+            };
+            self.activateActionForJob=function(action,jobid){
+                self.setCheckboxValues([jobid]);
+                self.beginEdit();
+                self.action(action);
+                self.toggleModal();
+            }
+        }
+        var bulkeditor;
+        jQuery(document).ready(function () {
+            init();
+            if (jQuery('#activity_section')) {
+                pageActivity = new History(appLinks.reportsEventsAjax, appLinks.menuNowrunningAjax);
+                ko.applyBindings(pageActivity, document.getElementById('activity_section'));
+                setupActivityLinks('activity_section', pageActivity);
+            }
+            jQuery('.act_execute_job').on('click',function(evt){
+                evt.preventDefault();
+               loadExec(jQuery(this).data('jobId'));
+            });
+            $$('#wffilterform input').each(function(elem){
+                if(elem.type=='text'){
+                    elem.observe('keypress',noenter);
+                }
+            });
+            bulkeditor=new BulkEditor();
+            ko.applyBindings(bulkeditor,document.getElementById('bulk_del_confirm'));
+            ko.applyBindings(bulkeditor,document.getElementById('bulk_edit_panel'));
+            ko.applyBindings(bulkeditor,document.getElementById('job_action_menu'));
+            ko.applyBindings(bulkeditor,document.getElementById('job_group_tree'));
+            ko.applyBindings(bulkeditor,document.getElementById('group_controls'));
+        });
     </script>
     <g:javascript library="yellowfade"/>
     <g:render template="/framework/remoteOptionValuesJS"/>
@@ -336,11 +484,6 @@
         color:red;
     }
 
-    .bubblewrap {
-        position: absolute;
-        width: 600px;
-        height: 250px;
-    }
         #histcontent table{
             width:100%;
         }
@@ -349,27 +492,58 @@
 <body>
 
 
-<div class="pageBody solo" >
-    <span class="prompt">Now running <span class="nowrunningcount">(0)</span></span>
-    <div id="nowrunning"><span class="note empty">No running Jobs</span></div>
-
-    <div id="error" class="error message" style="display:none;"></div>
+<g:if test="${flash.bulkJobResult?.errors}">
+    <div class="alert alert-dismissable alert-warning">
+        <a class="close" data-dismiss="alert" href="#" aria-hidden="true">&times;</a>
+        <ul>
+            <g:if test="${flash.bulkJobResult.errors instanceof org.springframework.validation.Errors}">
+                <g:renderErrors bean="${flash.bulkJobResult.errors}" as="list"/>
+            </g:if>
+            <g:else>
+                <g:each in="${flash.bulkJobResult.errors*.message}" var="message">
+                    <li><g:autoLink>${message}</g:autoLink></li>
+                </g:each>
+            </g:else>
+        </ul>
+    </div>
+</g:if>
+<g:if test="${flash.bulkJobResult?.success}">
+    <div class="alert alert-dismissable alert-info">
+        <a class="close" data-dismiss="alert" href="#" aria-hidden="true">&times;</a>
+        <ul>
+        <g:each in="${flash.bulkJobResult.success*.message}" var="message">
+            <li><g:autoLink>${message}</g:autoLink></li>
+        </g:each>
+        </ul>
+    </div>
+</g:if>
+<div class="runbox primary jobs" id="indexMain">
+    <div id="error" class="alert alert-danger" style="display:none;"></div>
+    <g:render template="workflowsFull" model="${[jobgroups:jobgroups,wasfiltered:wasfiltered?true:false, clusterMap: clusterMap,nextExecutions:nextExecutions,jobauthorizations:jobauthorizations,authMap:authMap,nowrunningtotal:nowrunningtotal,max:max,offset:offset,paginateParams:paginateParams,sortEnabled:true,rkey:rkey]}"/>
 </div>
-<div class="runbox jobs" id="indexMain">
-    <g:render template="workflowsFull" model="${[jobgroups:jobgroups,wasfiltered:wasfiltered?true:false,nowrunning:nowrunning,nextExecutions:nextExecutions,jobauthorizations:jobauthorizations,authMap:authMap,nowrunningtotal:nowrunningtotal,max:max,offset:offset,paginateParams:paginateParams,sortEnabled:true,rkey:rkey]}"/>
+<div class="modal fade" id="execDiv" role="dialog" aria-labelledby="deleteFilterModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                <h4 class="modal-title" id="deleteFilterModalLabel"><g:message code="job.execute.action.button" /></h4>
+            </div>
+
+            <div class="" id="execDivContent">
+
+
+            </div>
 </div>
-<div id="execDiv" style="display:none">
+</div>
+</div>
 
-    <div id="execDivContent" >
 
+<div class="row row-space" id="activity_section">
+    <div class="col-sm-12 ">
+        <h4 class="text-muted "><g:message code="page.section.Activity.for.jobs" /></h4>
+        <g:render template="/reports/activityLinks"
+                  model="[filter: [projFilter: params.project ?: request.project, jobIdFilter: '!null',], knockoutBinding: true, showTitle:true]"/>
     </div>
 </div>
-<div class="runbox">History</div>
-    <div class="pageBody">
-        <div id="histcontent"></div>
-        <g:javascript>
-            fireWhenReady('histcontent',loadHistory);
-        </g:javascript>
-    </div>
 </body>
 </html>

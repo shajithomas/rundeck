@@ -30,14 +30,13 @@ import com.dtolabs.rundeck.core.execution.impl.local.LocalNodeExecutor;
 import com.dtolabs.rundeck.core.plugins.PluginException;
 import com.dtolabs.rundeck.core.plugins.ProviderIdent;
 import com.dtolabs.rundeck.core.plugins.ScriptPluginProvider;
-import com.dtolabs.rundeck.core.plugins.configuration.ConfigurableService;
-import com.dtolabs.rundeck.core.plugins.configuration.Describable;
-import com.dtolabs.rundeck.core.plugins.configuration.DescribableService;
-import com.dtolabs.rundeck.core.plugins.configuration.Description;
+import com.dtolabs.rundeck.core.plugins.configuration.*;
 import com.dtolabs.rundeck.core.resources.ResourceModelSource;
 import com.dtolabs.rundeck.core.resources.ResourceModelSourceFactory;
+import com.dtolabs.rundeck.plugins.ServiceNameConstants;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 
@@ -47,7 +46,7 @@ import java.util.Properties;
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  */
 public class NodeExecutorService extends NodeSpecifiedService<NodeExecutor> implements DescribableService {
-    private static final String SERVICE_NAME = "NodeExecutor";
+    private static final String SERVICE_NAME = ServiceNameConstants.NodeExecutor;
     public static final String SERVICE_DEFAULT_PROVIDER_PROPERTY = "service." + SERVICE_NAME + ".default.provider";
     private static final String SERVICE_DEFAULT_LOCAL_PROVIDER_PROPERTY =
         "service." + SERVICE_NAME + ".default.local.provider";
@@ -60,12 +59,14 @@ public class NodeExecutorService extends NodeSpecifiedService<NodeExecutor> impl
         return SERVICE_NAME;
     }
 
+    public List<String> getBundledProviderNames() {
+        return Collections.unmodifiableList(new ArrayList<String>(registry.keySet()));
+    }
     NodeExecutorService(Framework framework) {
         super(framework);
 
         registry.put(JschNodeExecutor.SERVICE_PROVIDER_TYPE, JschNodeExecutor.class);
         registry.put(LocalNodeExecutor.SERVICE_PROVIDER_TYPE, LocalNodeExecutor.class);
-
     }
 
     @Override
@@ -99,8 +100,8 @@ public class NodeExecutorService extends NodeSpecifiedService<NodeExecutor> impl
         return NodeExecutor.class.isAssignableFrom(clazz) && hasValidProviderSignature(clazz);
     }
 
-    public NodeExecutor createProviderInstance(final Class<NodeExecutor> clazz, final String name) throws PluginException,
-        ProviderCreationException {
+    @Override
+    public <X extends NodeExecutor> NodeExecutor createProviderInstance(Class<X> clazz, String name) throws PluginException, ProviderCreationException {
         return createProviderInstanceFromType(clazz, name);
     }
 
@@ -114,38 +115,10 @@ public class NodeExecutorService extends NodeSpecifiedService<NodeExecutor> impl
     }
 
     public List<Description> listDescriptions() {
-        final ArrayList<Description> list = new ArrayList<Description>();
-        for (final ProviderIdent providerIdent : listProviders()) {
-            try {
-                final NodeExecutor providerForType = providerOfType(providerIdent.getProviderName());
-                if (providerForType instanceof Describable) {
-                    final Describable desc = (Describable) providerForType;
-                    final Description description = desc.getDescription();
-                    if(null!=description){
-                        list.add(description);
-                    }
-                }
-            } catch (ExecutionServiceException e) {
-                e.printStackTrace();
-            }
-
-        }
-        return list;
+        return DescribableServiceUtil.listDescriptions(this, false);
     }
 
     public List<ProviderIdent> listDescribableProviders() {
-        final ArrayList<ProviderIdent> list = new ArrayList<ProviderIdent>();
-        for (final ProviderIdent providerIdent : listProviders()) {
-            try {
-                final NodeExecutor providerForType = providerOfType(providerIdent.getProviderName());
-                if (providerForType instanceof Describable) {
-                    list.add(providerIdent);
-                }
-            } catch (ExecutionServiceException e) {
-                e.printStackTrace();
-            }
-
-        }
-        return list;
+        return DescribableServiceUtil.listDescribableProviders(this);
     }
 }

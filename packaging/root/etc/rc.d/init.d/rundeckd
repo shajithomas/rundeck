@@ -1,6 +1,6 @@
 #!/bin/bash 
 #
-# rundeckd    Startup script for the tapd
+# rundeckd    Startup script for the rundeck
 #
 # chkconfig: 2345 90 10
 # description: rundeckd, providing rundeckd
@@ -11,7 +11,7 @@
 . /etc/rundeck/profile
 
 prog="rundeckd"
-rundeckd="${JAVA_HOME:-/usr}/bin/java ${RDECK_JVM} -cp ${BOOTSTRAP_CP}:/etc/rundeck com.dtolabs.rundeck.RunServer /etc/rundeck 4440"
+rundeckd="${JAVA_HOME:-/usr}/bin/java ${RDECK_JVM} -cp ${BOOTSTRAP_CP} com.dtolabs.rundeck.RunServer /var/lib/rundeck ${RDECK_HTTP_PORT}"
 RETVAL=0
 PID_FILE=/var/run/${prog}.pid
 servicelog=/var/log/rundeck/service.log
@@ -24,7 +24,7 @@ start() {
 		echo
 		return 1
 	fi
-	nohup runuser -l rundeck -c "$rundeckd" 2>&1 >>$servicelog &
+        nohup runuser -s /bin/bash -l rundeck -c "$rundeckd" >>$servicelog 2>&1 &
  	RETVAL=$?	
 	PID=$!
 	echo $PID > $PID_FILE
@@ -74,7 +74,7 @@ case "$1" in
 		fi
 		;;
 	status)
-		status -p $PID_FILE $rundeckd
+		status -p $PID_FILE $prog
 		RETVAL=$?
 		;;
 	*)

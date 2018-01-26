@@ -7,22 +7,39 @@ source $DIR/include.sh
 
 file=$DIR/curl.out
 
+project="test"
+proj_config_url="${APIURL}/project/${project}/config"
+set_url_config(){
+    prop=$1
+    value=$2
+
+    docurl -X PUT --data-binary "${value}" -H 'Content-Type:text/plain' "${proj_config_url}/${prop}" > $DIR/curl.out
+    if [ 0 != $? ] ; then
+        errorMsg "ERROR: failed PUT request"
+        exit 2
+    fi
+    #echo "project.resources.url=http://invalid.domain:1235/resources.xml" >> $TPROPS
+}
+
+
 ###
-# Setup: acquire local node name from RDECK_BASE/etc/framework.properties#node.name
+# Setup: acquire local server name from RDECK_ETC/framework.properties#server.name
 ####
-localnode=$(grep 'framework.node.name' $RDECK_BASE/etc/framework.properties | sed 's/framework.node.name = //')
+localnode=$(grep 'framework.server.name' $RDECK_ETC/framework.properties | sed 's/framework.server.name = //')
 
 if [ -z "${localnode}" ] ; then
-    errorMsg "FAIL: Unable to determine framework.node.name from $RDECK_BASE/etc/framework.properties"
+    errorMsg "FAIL: Unable to determine framework.server.name from $RDECK_ETC/framework.properties"
     exit 2
 fi
+
+#disable node caching
+set_url_config "project.nodeCache.enabled" "false"
 
 # now submit req
 runurl="${APIURL}/resources"
 
 echo "TEST: /api/resources, basic XML response with all nodes: >0 result"
 
-project="test"
 params="project=${project}"
 
 # get listing
@@ -109,7 +126,7 @@ echo "TEST: /api/resources, format unsupported"
 
 # get listing
 docurl ${runurl}?${params} > ${file} || fail "failed request"
-sh $DIR/api-test-error.sh ${file} "The format specified is unsupported: unsupported" || fail "expected error"
+$SHELL $SRC_DIR/api-test-error.sh ${file} "The format specified is unsupported: unsupported" || fail "expected error"
 
 echo "OK"
 
@@ -123,7 +140,7 @@ params="project=${project}&format=other"
 API2URL="${RDURL}/api/2"
 runurl="${API2URL}/resources"
 docurl ${runurl}?${params} > ${file} || fail "failed request"
-sh $DIR/api-test-error.sh ${file} "Unsupported API Version \"2\". API Request: /api/2/resources. Reason: Minimum supported version: 3" || fail "expected error"
+$SHELL $SRC_DIR/api-test-error.sh ${file} "Unsupported API Version \"2\". API Request: /api/2/resources. Reason: Minimum supported version: 3" || fail "expected error"
 
 echo "OK"
 
@@ -133,11 +150,13 @@ echo "OK"
 
 # temporarily move actual resources.xml out of the way, and replace with our own
 
-cp $RDECK_BASE/projects/test/etc/resources.xml $RDECK_BASE/projects/test/etc/resources.xml.backup
+cp $RDECK_PROJECTS/test/etc/resources.xml $RDECK_PROJECTS/test/etc/resources.xml.backup
 
-cat <<END > $RDECK_BASE/projects/test/etc/resources.xml
+# sleep to force file mtime to change
+sleep 1
+
+cat <<END > $RDECK_PROJECTS/test/etc/resources.xml
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE project PUBLIC "-//DTO Labs Inc.//DTD Resources Document 1.0//EN" "project.dtd">
 
 <project>
   <node name="test1" type="Node" description="Rundeck test node" tags="test1,testboth" hostname="testhost1" osArch="x86_64" osFamily="unix" osName="Mac OS X" osVersion="10.6.6" username="rdeck" editUrl="" remoteUrl=""/>
@@ -166,7 +185,8 @@ fi
 #Check results list
 itemcount=$($XMLSTARLET sel -T -t -v "count(/project/node)" ${file})
 if [ "1" != "$itemcount" ] ; then
-    errorMsg "FAIL: expected single /project/node element"
+    errorMsg "FAIL: expected single /project/node element ${runurl}?${params}"
+    cat $file
     exit 2
 fi
 itemname=$($XMLSTARLET sel -T -t -v "/project/node/@name" ${file})
@@ -197,7 +217,8 @@ fi
 #Check results list
 itemcount=$($XMLSTARLET sel -T -t -v "count(/project/node)" ${file})
 if [ "1" != "$itemcount" ] ; then
-    errorMsg "FAIL: expected single /project/node element"
+    errorMsg "FAIL: expected single /project/node element ${runurl}?${params}"
+    cat $file
     exit 2
 fi
 itemname=$($XMLSTARLET sel -T -t -v "/project/node/@name" ${file})
@@ -289,7 +310,8 @@ fi
 #Check results list
 itemcount=$($XMLSTARLET sel -T -t -v "count(/project/node)" ${file})
 if [ "1" != "$itemcount" ] ; then
-    errorMsg "FAIL: expected single /project/node element"
+    errorMsg "FAIL: expected single /project/node element ${runurl}?${params}"
+    cat $file
     exit 2
 fi
 itemname=$($XMLSTARLET sel -T -t -v "/project/node/@name" ${file})
@@ -329,4 +351,4 @@ assert "$localnode" "$itemname" "Query for local item"
 echo "OK"
 
 rm ${file}
-mv $RDECK_BASE/projects/test/etc/resources.xml.backup $RDECK_BASE/projects/test/etc/resources.xml
+mv $RDECK_PROJECTS/test/etc/resources.xml.backup $RDECK_PROJECTS/test/etc/resources.xml

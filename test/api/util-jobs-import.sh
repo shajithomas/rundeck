@@ -23,7 +23,7 @@ ulopts="-F xmlBatch=@$infile"
 # get listing
 docurl $ulopts ${runurl}?${params} > $DIR/curl.out || fail "failed request: ${runurl}"
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #result will contain list of failed and succeeded jobs, in this
 #case there should only be 1 failed or 1 succeeded since we submit only 1
@@ -39,12 +39,12 @@ if [ "0" != "$failedcount" ] ; then
 fi
 
 if [ "0" != "$succount" ] ; then
-    echo "$failedcount Succeeded:"
+    echo "$succount Succeeded:"
     $XMLSTARLET sel -T -t -m "/result/succeeded/job" -o "[" -v "id" -o "] " -v "name" -o ", " -v "group" -o ", " -v "project" -n $DIR/curl.out
 fi
 
 if [ "0" != "$skipcount" ] ; then
-    echo "$failedcount Skipped:"
+    echo "$skipcount Skipped:"
     $XMLSTARLET sel -T -t -m "/result/skipped/job" -o "[" -v "id" -o "] " -v "name" -o ", " -v "group" -o ", " -v "project" -n $DIR/curl.out
 fi
 rm $DIR/curl.out

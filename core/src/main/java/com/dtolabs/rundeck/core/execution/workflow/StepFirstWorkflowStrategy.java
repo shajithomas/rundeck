@@ -23,18 +23,24 @@
 */
 package com.dtolabs.rundeck.core.execution.workflow;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import com.dtolabs.rundeck.core.Constants;
 import com.dtolabs.rundeck.core.common.Framework;
-import com.dtolabs.rundeck.core.execution.*;
-import com.dtolabs.rundeck.core.execution.dispatch.DispatcherResult;
-
-import java.util.*;
+import com.dtolabs.rundeck.core.execution.StepExecutionItem;
+import com.dtolabs.rundeck.core.execution.workflow.steps.StepExecutionResult;
 
 /**
  * StepFirstWorkflowStrategy iterates over the workflow steps and dispatches each one to all nodes matching the filter.
  * This strategy is used either for an entire workflow and set of multiple nodes OR by the NodeFirstWorkflowStrategy as
  * the inner loop over a single node.
- * <p/>
+ * <br>
  * The WorkflowExecutionResult will contain as the resultSet a map of Node name to
  *
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
@@ -42,46 +48,91 @@ import java.util.*;
  */
 public class StepFirstWorkflowStrategy extends BaseWorkflowStrategy {
 
+    protected static final String DATA_CONTEXT_PREFIX = "data context: ";
+    protected static final String OPTION_KEY = "option";
+    protected static final String SECURE_OPTION_KEY = "secureOption";
+    protected static final String SECURE_OPTION_VALUE = "****";
+    
     public StepFirstWorkflowStrategy(final Framework framework) {
         super(framework);
     }
 
-    public WorkflowExecutionResult executeWorkflowImpl(final ExecutionContext executionContext,
-                                                   final WorkflowExecutionItem item) {
-        boolean workflowsuccess = false;
+    public WorkflowExecutionResult executeWorkflowImpl(final StepExecutionContext executionContext,
+                                                       final WorkflowExecutionItem item) {
+        WorkflowStatusResult workflowResult= WorkflowResultFailed;
         Exception exception = null;
         final IWorkflow workflow = item.getWorkflow();
-        final Map<Integer, Object> failedList = new HashMap<Integer, Object>();
-        final List<DispatcherResult> resultList = new ArrayList<DispatcherResult>();
+        final Map<Integer, StepExecutionResult> stepFailures = new HashMap<Integer, StepExecutionResult>();
+        final List<StepExecutionResult> stepResults = new ArrayList<StepExecutionResult>();
         try {
             executionContext.getExecutionListener().log(Constants.DEBUG_LEVEL,
-                "NodeSet: " + executionContext.getNodeSelector());
+                                                        "NodeSet: " + executionContext.getNodeSelector());
             executionContext.getExecutionListener().log(Constants.DEBUG_LEVEL, "Workflow: " + workflow);
-            executionContext.getExecutionListener().log(Constants.DEBUG_LEVEL, "data context: " + executionContext
-                .getDataContext());
+            
+            Map<String, Map<String, String>> printableContext = createPrintableDataContext(executionContext.getDataContext());
+            executionContext.getExecutionListener().log(Constants.DEBUG_LEVEL, String.format("%s %s", DATA_CONTEXT_PREFIX, printableContext));
 
-            final List<ExecutionItem> iWorkflowCmdItems = workflow.getCommands();
+            final List<StepExecutionItem> iWorkflowCmdItems = workflow.getCommands();
             if (iWorkflowCmdItems.size() < 1) {
                 executionContext.getExecutionListener().log(Constants.WARN_LEVEL, "Workflow has 0 items");
             }
-            workflowsuccess = executeWorkflowItemsForNodeSet(executionContext, failedList, resultList,
-                iWorkflowCmdItems, workflow.isKeepgoing());
-            if (!workflowsuccess) {
-                throw new WorkflowFailureException("Some steps in the workflow failed: " + failedList);
-            }
+            workflowResult = executeWorkflowItemsForNodeSet(executionContext, stepFailures, stepResults,
+                                                             iWorkflowCmdItems, workflow.isKeepgoing());
         } catch (RuntimeException e) {
             exception = e;
-        } catch (WorkflowStepFailureException e) {
-            exception = e;
-        } catch (WorkflowFailureException e) {
-            exception = e;
+            e.printStackTrace();
+            executionContext.getExecutionListener().log(Constants.ERR_LEVEL, "Exception: " + e.getClass() + ": " + e
+                    .getMessage());
         }
-        final boolean success = workflowsuccess;
         final Exception orig = exception;
-        final HashMap<String, List<StatusResult>> results = convertResults(resultList);
-        final Map<String, Collection<String>> failures = convertFailures(failedList);
-        return new WorkflowExecutionResult(results, failures, success, orig);
+        final Map<String, Collection<StepExecutionResult>> nodeFailures = convertFailures(stepFailures);
+        return new BaseWorkflowExecutionResult(
+                stepResults,
+                nodeFailures,
+                stepFailures,
+                orig,
+                workflowResult
+        );
 
+    }
+    
+    /**
+     * Creates a copy of the given data context with the secure option values obfuscated.
+     * This does not modify the original data context.
+     * 
+     * "secureOption" map values will always be obfuscated. "option" entries that are also in "secureOption"
+     * will have their values obfuscated. All other maps within the data context will be added
+     * directly to the copy.
+     * @param dataContext data
+     * @return printable data
+     */
+    protected Map<String, Map<String, String>> createPrintableDataContext(Map<String, Map<String, String>> dataContext) {
+        Map<String, Map<String, String>> printableContext = new HashMap<String, Map<String, String>>();
+        if (dataContext != null) {
+            printableContext.putAll(dataContext);
+            Set<String> secureValues = new HashSet<String>();
+            if (dataContext.containsKey(SECURE_OPTION_KEY)) {
+                Map<String, String> secureOptions = new HashMap<String, String>();
+                secureOptions.putAll(dataContext.get(SECURE_OPTION_KEY));
+                secureValues.addAll(secureOptions.values());
+                for (Map.Entry<String, String> entry : secureOptions.entrySet()) {
+                    entry.setValue(SECURE_OPTION_VALUE);
+                }
+                printableContext.put(SECURE_OPTION_KEY, secureOptions);
+            }
+
+            if (dataContext.containsKey(OPTION_KEY)) {
+                Map<String, String> options = new HashMap<String, String>();
+                options.putAll(dataContext.get(OPTION_KEY));
+                for (Map.Entry<String, String> entry : options.entrySet()) {
+                    if (secureValues.contains(entry.getValue())) {
+                        entry.setValue(SECURE_OPTION_VALUE);
+                    }
+                }
+                printableContext.put(OPTION_KEY, options);
+            }
+        }
+        return printableContext;
     }
 
     static boolean isInnerLoop(final WorkflowExecutionItem item) {
@@ -97,7 +148,7 @@ public class StepFirstWorkflowStrategy extends BaseWorkflowStrategy {
             this.workflow = workflow;
         }
 
-        public List<ExecutionItem> getCommands() {
+        public List<StepExecutionItem> getCommands() {
             return workflow.getCommands();
         }
 

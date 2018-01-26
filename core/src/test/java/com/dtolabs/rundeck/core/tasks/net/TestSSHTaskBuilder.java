@@ -25,11 +25,21 @@ package com.dtolabs.rundeck.core.tasks.net;
 
 import com.dtolabs.rundeck.core.cli.CLIUtils;
 import com.dtolabs.rundeck.core.common.NodeEntryImpl;
-import junit.framework.TestCase;
-import org.apache.tools.ant.Project;
-import org.apache.tools.ant.types.Environment;
+import com.dtolabs.rundeck.core.utils.SSHAgentProcess;
+import com.dtolabs.rundeck.plugins.PluginLogger;
 
+import junit.framework.TestCase;
+
+import org.apache.tools.ant.Project;
+import org.apache.tools.ant.taskdefs.optional.ssh.SSHUserInfo;
+import org.apache.tools.ant.types.Environment;
+import org.rundeck.storage.api.PathUtil;
+import org.rundeck.storage.api.StorageException;
+
+import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.*;
 
 /**
@@ -44,15 +54,22 @@ public class TestSSHTaskBuilder extends TestCase {
         boolean failonerror;
         boolean trust;
         Project project;
-        boolean verbose;
-        String host;
-        int port;
+        private boolean verbose;
+        private String host;
+        private int port;
+        private long timeout;
+        private SSHUserInfo userInfo;
         String username;
-        String keyfile;
+        private String keyfile;
         String passphrase;
         String password;
-        String knownhosts;
-
+        private String knownhosts;
+        private PluginLogger pluginLogger;
+        private Map<String,String> sshConfig;
+        private InputStream sshKeyData;
+        private Boolean enableSSHAgent;
+        private SSHAgentProcess sshAgentProcess;
+        private Integer ttlSSHAgent;
 
         public void setFailonerror(boolean failonerror) {
             this.failonerror = failonerror;
@@ -86,6 +103,12 @@ public class TestSSHTaskBuilder extends TestCase {
             this.keyfile = keyfile;
         }
 
+        @Override
+        public void setSshKeyData(InputStream sshKeyData) {
+            this.sshKeyData=sshKeyData;
+        }
+
+
         public void setPassphrase(String passphrase) {
             this.passphrase = passphrase;
         }
@@ -98,6 +121,88 @@ public class TestSSHTaskBuilder extends TestCase {
             this.knownhosts = knownhosts;
         }
 
+        public boolean getVerbose() {
+            return verbose;
+        }
+
+        public String getHost() {
+            return host;
+        }
+
+        public int getPort() {
+            return port;
+        }
+
+        public String getKeyfile() {
+            return keyfile;
+        }
+
+        public String getKnownhosts() {
+            return knownhosts;
+        }
+
+        public PluginLogger getPluginLogger() {
+            return pluginLogger;
+        }
+
+        public void setPluginLogger(PluginLogger pluginLogger) {
+            this.pluginLogger = pluginLogger;
+        }
+
+        public Map<String, String> getSshConfig() {
+            return sshConfig;
+        }
+
+        public void setSshConfig(Map<String, String> sshConfig) {
+            this.sshConfig = sshConfig;
+        }
+
+        public InputStream getSshKeyData() {
+            return sshKeyData;
+        }
+
+        public long getTimeout() {
+            return timeout;
+        }
+
+        public void setTimeout(long timeout) {
+            this.timeout = timeout;
+        }
+
+        public SSHUserInfo getUserInfo() {
+            return userInfo;
+        }
+
+        public void setUserInfo(SSHUserInfo userInfo) {
+            this.userInfo = userInfo;
+        }
+        
+        public SSHAgentProcess getSSHAgentProcess() {
+            return sshAgentProcess;
+        }
+
+    		@Override
+    		public void setEnableSSHAgent(Boolean enableSSHAgent) {
+    			this.enableSSHAgent = enableSSHAgent;
+    		}
+    
+    		@Override
+    		public Boolean getEnableSSHAgent() {
+    			return null;
+    		}
+    
+    		@Override
+    		public void setSSHAgentProcess(SSHAgentProcess sshAgentProcess) {
+    			this.sshAgentProcess = sshAgentProcess;
+    		}
+    		
+    	  public void setTtlSSHAgent(Integer ttlSSHAgent){
+    	    this.ttlSSHAgent = ttlSSHAgent;
+    	  }
+    	  
+        public Integer getTtlSSHAgent(){
+          return this.ttlSSHAgent;
+        }
     }
 
     static class testSCPInterface extends testSSHBaseInterface implements SSHTaskBuilder.SCPInterface {
@@ -142,10 +247,24 @@ public class TestSSHTaskBuilder extends TestCase {
     private static class testSSHConnectionInfo implements SSHTaskBuilder.SSHConnectionInfo {
         SSHTaskBuilder.AuthenticationType authenticationType;
         String privateKeyfilePath;
+        String privateKeyResourcePath;
+        String passwordStoragePath;
         String password;
         int SSHTimeout;
+        Boolean localSSHAgent;
+        Integer localTtlSSHAgent;
         String username;
-        private String privateKeyPassphrase;
+        String privateKeyPassphrase;
+        InputStream privateKeyResourceData;
+        IOException privateKeyResourceDataIOException;
+        IOException passwordStorageDataIOException;
+        byte[] passwordStorageData;
+        StorageException privateKeyResourceDataStorageException;
+        StorageException passwordStorageDataStorageException;
+        Map<String,String> sshConfig;
+        private byte[] sudoPasswordStorageData;
+        private String privateKeyPassphraseStoragePath;
+        private byte[] privateKeyPassphraseStorageData;
 
         public SSHTaskBuilder.AuthenticationType getAuthenticationType() {
             return authenticationType;
@@ -169,6 +288,72 @@ public class TestSSHTaskBuilder extends TestCase {
 
         public String getPrivateKeyPassphrase() {
             return privateKeyPassphrase;
+        }
+
+        public String getPrivateKeyStoragePath() {
+            return privateKeyResourcePath;
+        }
+        
+        public Boolean getLocalSSHAgent() {
+            return localSSHAgent;
+        }
+        
+        public Integer getTtlSSHAgent() {
+          return localTtlSSHAgent;
+        }
+
+        public InputStream getPrivateKeyStorageData() throws IOException {
+            if (null != privateKeyResourceDataIOException) {
+                throw privateKeyResourceDataIOException;
+            }
+            if (null != privateKeyResourceDataStorageException) {
+                throw privateKeyResourceDataStorageException;
+            }
+            return privateKeyResourceData;
+        }
+
+        @Override
+        public String getPasswordStoragePath() {
+            return passwordStoragePath;
+        }
+
+        public byte[] getPasswordStorageData() throws IOException{
+            if (null != passwordStorageDataIOException) {
+                throw passwordStorageDataIOException;
+            }
+            if (null != passwordStorageDataStorageException) {
+                throw passwordStorageDataStorageException;
+            }
+            return passwordStorageData;
+        }
+
+        public Map<String, String> getSshConfig() {
+            return sshConfig;
+        }
+
+        @Override
+        public String getSudoPasswordStoragePath(final String prefix) {
+            return null;
+        }
+
+        @Override
+        public byte[] getSudoPasswordStorageData(final String prefix) throws IOException {
+            return sudoPasswordStorageData;
+        }
+
+        @Override
+        public String getSudoPassword(final String prefix) {
+            return null;
+        }
+
+        @Override
+        public String getPrivateKeyPassphraseStoragePath() {
+            return privateKeyPassphraseStoragePath;
+        }
+
+        @Override
+        public byte[] getPrivateKeyPassphraseStorageData() throws IOException {
+            return privateKeyPassphraseStorageData;
         }
     }
 
@@ -209,47 +394,53 @@ public class TestSSHTaskBuilder extends TestCase {
 
     private void assertInvariable(testState state, testSSHExecInterface test) {
         //never changes
-        assertEquals("sshexec.output", test.outputproperty);
+        assertEquals(null, test.outputproperty);
         assertInvariableBase(state, test);
     }
 
     private void assertInvariableBase(testState state, testSSHBaseInterface test) {
-        assertNull(test.knownhosts);
+        assertNull(test.getKnownhosts());
         assertEquals(true, test.failonerror);
         assertEquals(state.project, test.project);
         assertEquals(true, test.trust);
     }
 
-    private void runBuildSSH(final testState state, final testSSHExecInterface test) throws
+    private void runBuildSSH(final testState state, final testSSHExecInterface test, PluginLogger pluginLogger) throws
         SSHTaskBuilder.BuilderException {
         SSHTaskBuilder.build(test, state.node, state.strings, state.project, state.stringMapMap,
-            state.sshConnectionInfo, state.loglevel);
+            state.sshConnectionInfo, state.loglevel, pluginLogger);
     }
 
-    private void runBuildSCP(final testState state, final testSCPInterface test) throws
+    private void runBuildSCP(final testState state, final testSCPInterface test, PluginLogger pluginLogger) throws
         SSHTaskBuilder.BuilderException {
         SSHTaskBuilder.buildScp(test, state.node, state.project, state.remotePath,
-            state.sourceFile, state.sshConnectionInfo, state.loglevel);
+            state.sourceFile, state.sshConnectionInfo, state.loglevel, pluginLogger);
     }
-
+    PluginLogger testLogger = new PluginLogger() {
+        @Override
+        public void log(int level, String message) {
+        }
+    };
     public void testBuildSSHDefault() throws Exception {
         final testState state = new testState();
         final testSSHExecInterface test = new testSSHExecInterface();
 
-        runBuildSSH(state, test);
+        runBuildSSH(state, test, testLogger);
 
 
         assertEquals(CLIUtils.generateArgline(null, state.strings), test.command);
-        assertEquals("hostname", test.host);
-        assertEquals(0, test.port);
-        assertEquals(testKeyfile.getAbsolutePath(), test.keyfile);
+        assertEquals("hostname", test.getHost());
+        assertEquals(0, test.getPort());
+        assertEquals(testKeyfile.getAbsolutePath(), test.getKeyfile());
         assertEquals("", test.passphrase);
         assertEquals(null, test.password);
         assertEquals(0, test.timeout);
         assertEquals("testusername", test.username);
-        assertEquals(false, test.verbose);
+        assertEquals(false, test.getVerbose());
         assertInvariable(state, test);
-
+        assertNotNull(test.getSshConfig());
+        assertEquals("1", test.getSshConfig().get("MaxAuthTries"));
+        assertEquals("publickey,password,keyboard-interactive", test.getSshConfig().get("PreferredAuthentications"));
 
     }
 
@@ -261,17 +452,17 @@ public class TestSSHTaskBuilder extends TestCase {
         state.sshConnectionInfo.SSHTimeout = 600;
         state.sshConnectionInfo.username = "usernameValue";
 
-        runBuildSSH(state, test);
+        runBuildSSH(state, test, testLogger);
 
         assertEquals(CLIUtils.generateArgline(null, state.strings), test.command);
-        assertEquals("hostname", test.host);
-        assertEquals(33, test.port);
-        assertEquals(testKeyfile.getAbsolutePath(), test.keyfile);
+        assertEquals("hostname", test.getHost());
+        assertEquals(33, test.getPort());
+        assertEquals(testKeyfile.getAbsolutePath(), test.getKeyfile());
         assertEquals("", test.passphrase);
         assertEquals(null, test.password);
         assertEquals(600, test.timeout);
         assertEquals("usernameValue", test.username);
-        assertEquals(false, test.verbose);
+        assertEquals(false, test.getVerbose());
 
         //never changes
         assertInvariable(state, test);
@@ -285,17 +476,17 @@ public class TestSSHTaskBuilder extends TestCase {
         state.sshConnectionInfo.username = "usernameValue";
         state.sshConnectionInfo.privateKeyPassphrase = "passphraseValue";
 
-        runBuildSSH(state, test);
+        runBuildSSH(state, test, testLogger);
 
         assertEquals(CLIUtils.generateArgline(null, state.strings), test.command);
-        assertEquals("hostname", test.host);
-        assertEquals(33, test.port);
-        assertEquals(testKeyfile.getAbsolutePath(), test.keyfile);
+        assertEquals("hostname", test.getHost());
+        assertEquals(33, test.getPort());
+        assertEquals(testKeyfile.getAbsolutePath(), test.getKeyfile());
         assertEquals("passphraseValue", test.passphrase);
         assertEquals(null, test.password);
         assertEquals(600, test.timeout);
         assertEquals("usernameValue", test.username);
-        assertEquals(false, test.verbose);
+        assertEquals(false, test.getVerbose());
 
         //never changes
         assertInvariable(state, test);
@@ -310,7 +501,7 @@ public class TestSSHTaskBuilder extends TestCase {
 
         //null node hostname
         try {
-            runBuildSSH(state, test);
+            runBuildSSH(state, test, testLogger);
             fail("Shouldn't succeed");
         } catch (SSHTaskBuilder.BuilderException e) {
             assertEquals("username was not set", e.getMessage());
@@ -326,17 +517,17 @@ public class TestSSHTaskBuilder extends TestCase {
         state.sshConnectionInfo.password = "passwordValue";
         state.sshConnectionInfo.username = "usernameValue";
 
-        runBuildSSH(state, test);
+        runBuildSSH(state, test, testLogger);
 
         assertEquals(CLIUtils.generateArgline(null, state.strings), test.command);
-        assertEquals("hostname", test.host);
-        assertEquals(0, test.port);
-        assertEquals(null, test.keyfile);
+        assertEquals("hostname", test.getHost());
+        assertEquals(0, test.getPort());
+        assertEquals(null, test.getKeyfile());
         assertEquals(null, test.passphrase);
         assertEquals("passwordValue", test.password);
         assertEquals(0, test.timeout);
         assertEquals("usernameValue", test.username);
-        assertEquals(false, test.verbose);
+        assertEquals(false, test.getVerbose());
 
         //never changes
         assertInvariable(state, test);
@@ -352,10 +543,74 @@ public class TestSSHTaskBuilder extends TestCase {
 
         //null node hostname
         try {
-            runBuildSSH(state, test);
+            runBuildSSH(state, test, testLogger);
             fail("Shouldn't succeed");
         } catch (SSHTaskBuilder.BuilderException e) {
             assertEquals("username was not set", e.getMessage());
+        }
+
+    }
+
+    public void testBuildSSHKeyResource() throws Exception {
+        final testState state = new testState();
+        final testSSHExecInterface test = new testSSHExecInterface();
+
+        state.sshConnectionInfo.authenticationType = SSHTaskBuilder.AuthenticationType.privateKey;
+        state.sshConnectionInfo.privateKeyResourcePath = "/keys/key1.pem";
+        state.sshConnectionInfo.privateKeyResourceData = new ByteArrayInputStream("data".getBytes());
+        state.sshConnectionInfo.username = "usernameValue";
+
+        runBuildSSH(state, test, testLogger);
+
+        assertEquals(CLIUtils.generateArgline(null, state.strings), test.command);
+        assertEquals("hostname", test.getHost());
+        assertEquals(0, test.getPort());
+        assertNotNull(test.getSshKeyData());
+        assertEquals(null, test.getKeyfile());
+        assertEquals("", test.passphrase);
+        assertEquals("", test.password);
+        assertEquals(0, test.timeout);
+        assertEquals("usernameValue", test.username);
+        assertEquals(false, test.getVerbose());
+
+        //never changes
+        assertInvariable(state, test);
+    }
+    public void testBuildSSHKeyResource_ioexception() throws Exception {
+        final testState state = new testState();
+        final testSSHExecInterface test = new testSSHExecInterface();
+
+        state.sshConnectionInfo.authenticationType = SSHTaskBuilder.AuthenticationType.privateKey;
+        state.sshConnectionInfo.privateKeyResourcePath = "/keys/key1.pem";
+        state.sshConnectionInfo.privateKeyResourceData = new ByteArrayInputStream("data".getBytes());
+        state.sshConnectionInfo.privateKeyResourceDataIOException = new IOException("blah");
+        state.sshConnectionInfo.username = "usernameValue";
+
+        try {
+            runBuildSSH(state, test, testLogger);
+            fail("expected exception");
+        } catch (SSHTaskBuilder.BuilderException e) {
+            assertEquals(IOException.class, e.getCause().getClass());
+        }
+
+    }
+
+    public void testBuildSSHKeyResource_storageexception() throws Exception {
+        final testState state = new testState();
+        final testSSHExecInterface test = new testSSHExecInterface();
+
+        state.sshConnectionInfo.authenticationType = SSHTaskBuilder.AuthenticationType.privateKey;
+        state.sshConnectionInfo.privateKeyResourcePath = "/keys/key1.pem";
+        state.sshConnectionInfo.privateKeyResourceData = new ByteArrayInputStream("data".getBytes());
+        state.sshConnectionInfo.privateKeyResourceDataStorageException = new StorageException("blah",
+                StorageException.Event.READ, PathUtil.asPath("keys/key1.pem"));
+        state.sshConnectionInfo.username = "usernameValue";
+
+        try {
+            runBuildSSH(state, test, testLogger);
+            fail("expected exception");
+        } catch (SSHTaskBuilder.BuilderException e) {
+            assertEquals(StorageException.class, e.getCause().getClass());
         }
 
     }
@@ -367,14 +622,14 @@ public class TestSSHTaskBuilder extends TestCase {
 
         state.loglevel = 3;
 
-        runBuildSSH(state, test);
+        runBuildSSH(state, test, testLogger);
 
-        assertEquals(true, test.verbose);
+        assertEquals(true, test.getVerbose());
 
         assertEquals(CLIUtils.generateArgline(null, state.strings), test.command);
-        assertEquals("hostname", test.host);
-        assertEquals(0, test.port);
-        assertEquals(testKeyfile.getAbsolutePath(), test.keyfile);
+        assertEquals("hostname", test.getHost());
+        assertEquals(0, test.getPort());
+        assertEquals(testKeyfile.getAbsolutePath(), test.getKeyfile());
         assertEquals("", test.passphrase);
         assertEquals(null, test.password);
         assertEquals(0, test.timeout);
@@ -384,6 +639,50 @@ public class TestSSHTaskBuilder extends TestCase {
         assertInvariable(state, test);
     }
 
+    public void testBuildSSHConfigSimple() throws Exception {
+        final testState state = new testState();
+        final testSSHExecInterface test = new testSSHExecInterface();
+        state.sshConnectionInfo.sshConfig=new HashMap<String, String>(){{
+            put("abc", "123");
+        }};
+
+        runBuildSSH(state, test, testLogger);
+
+        assertNotNull(test.getSshConfig());
+        assertEquals(3,test.getSshConfig().size());
+        assertEquals("123", test.getSshConfig().get("abc"));
+        assertEquals("1", test.getSshConfig().get("MaxAuthTries"));
+        assertEquals("publickey,password,keyboard-interactive", test.getSshConfig().get("PreferredAuthentications"));
+    }
+    public void testBuildSSHConfigOverrideDefaults() throws Exception {
+        final testState state = new testState();
+        final testSSHExecInterface test = new testSSHExecInterface();
+        state.sshConnectionInfo.sshConfig = new HashMap<String, String>() {{
+            put("MaxAuthTries", "2");
+        }};
+
+        runBuildSSH(state, test, testLogger);
+
+        assertNotNull(test.getSshConfig());
+        assertEquals(2,test.getSshConfig().size());
+        assertEquals("2", test.getSshConfig().get("MaxAuthTries"));
+        assertEquals("publickey,password,keyboard-interactive", test.getSshConfig().get("PreferredAuthentications"));
+    }
+    public void testBuildSSHConfigOverrideDefaultsPreferredAuthentications() throws Exception {
+        final testState state = new testState();
+        final testSSHExecInterface test = new testSSHExecInterface();
+        state.sshConnectionInfo.sshConfig = new HashMap<String, String>() {{
+            put("PreferredAuthentications", "publickey,password");
+        }};
+
+
+        runBuildSSH(state, test, testLogger);
+
+        assertNotNull(test.getSshConfig());
+        assertEquals(2,test.getSshConfig().size());
+        assertEquals("1", test.getSshConfig().get("MaxAuthTries"));
+        assertEquals("publickey,password", test.getSshConfig().get("PreferredAuthentications"));
+    }
     public void testBuildSSHNoHostname() throws Exception {
         final testState state = new testState();
         final testSSHExecInterface test = new testSSHExecInterface();
@@ -395,7 +694,7 @@ public class TestSSHTaskBuilder extends TestCase {
 
         //null node hostname
         try {
-            runBuildSSH(state, test);
+            runBuildSSH(state, test, testLogger);
             fail("Shouldn't succeed");
         } catch (IllegalArgumentException e) {
             assertNotNull(e);
@@ -414,7 +713,7 @@ public class TestSSHTaskBuilder extends TestCase {
 
         //no auth type
         try {
-            runBuildSSH(state, test);
+            runBuildSSH(state, test, testLogger);
             fail("Shouldn't succeed");
         } catch (SSHTaskBuilder.BuilderException e) {
             assertNotNull(e);
@@ -429,18 +728,18 @@ public class TestSSHTaskBuilder extends TestCase {
         state.sourceFile = testSourcefile;
         state.remotePath = "/test/path";
 
-        runBuildSCP(state, test);
+        runBuildSCP(state, test, testLogger);
 
         assertEquals(testSourcefile.getAbsolutePath(), test.localFile);
         assertEquals("testusername@hostname:/test/path", test.remoteTofile);
 
-        assertEquals("hostname", test.host);
-        assertEquals(0, test.port);
-        assertEquals(testKeyfile.getAbsolutePath(), test.keyfile);
+        assertEquals("hostname", test.getHost());
+        assertEquals(0, test.getPort());
+        assertEquals(testKeyfile.getAbsolutePath(), test.getKeyfile());
         assertEquals("", test.passphrase);
         assertEquals(null, test.password);
         assertEquals("testusername", test.username);
-        assertEquals(false, test.verbose);
+        assertEquals(false, test.getVerbose());
         assertInvariableBase(state, test);
     }
 
@@ -454,18 +753,18 @@ public class TestSSHTaskBuilder extends TestCase {
         state.sourceFile = testSourcefile;
         state.remotePath = "/test/path";
 
-        runBuildSCP(state, test);
+        runBuildSCP(state, test, testLogger);
 
         assertEquals(testSourcefile.getAbsolutePath(), test.localFile);
         assertEquals("testusername@hostname:/test/path", test.remoteTofile);
 
-        assertEquals("hostname", test.host);
-        assertEquals(0, test.port);
-        assertEquals(null, test.keyfile);
+        assertEquals("hostname", test.getHost());
+        assertEquals(0, test.getPort());
+        assertEquals(null, test.getKeyfile());
         assertEquals(null, test.passphrase);
         assertEquals("passwordValue", test.password);
         assertEquals("testusername", test.username);
-        assertEquals(false, test.verbose);
+        assertEquals(false, test.getVerbose());
         assertInvariableBase(state, test);
     }
 
@@ -481,7 +780,7 @@ public class TestSSHTaskBuilder extends TestCase {
 
         //null username
         try {
-            runBuildSCP(state, test);
+            runBuildSCP(state, test, testLogger);
             fail("Shouldn't succeed");
         } catch (SSHTaskBuilder.BuilderException e) {
             assertEquals("username was not set", e.getMessage());
@@ -503,7 +802,7 @@ public class TestSSHTaskBuilder extends TestCase {
 
         //null username
         try {
-            runBuildSCP(state, test);
+            runBuildSCP(state, test, testLogger);
             fail("Shouldn't succeed");
         } catch (SSHTaskBuilder.BuilderException e) {
             assertEquals("username was not set", e.getMessage());
@@ -520,7 +819,7 @@ public class TestSSHTaskBuilder extends TestCase {
 
         //null sourceFile
         try {
-            runBuildSCP(state, test);
+            runBuildSCP(state, test, testLogger);
             fail("Shouldn't succeed");
         } catch (SSHTaskBuilder.BuilderException e) {
             assertEquals("sourceFile was not set", e.getMessage());
@@ -538,7 +837,7 @@ public class TestSSHTaskBuilder extends TestCase {
 
         //null remotePath
         try {
-            runBuildSCP(state, test);
+            runBuildSCP(state, test, testLogger);
             fail("Shouldn't succeed");
         } catch (SSHTaskBuilder.BuilderException e) {
             assertEquals("remotePath was not set", e.getMessage());

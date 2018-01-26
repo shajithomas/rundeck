@@ -26,6 +26,9 @@ package com.dtolabs.rundeck.core.resources.format;
 import com.dtolabs.rundeck.core.common.Framework;
 import com.dtolabs.rundeck.core.common.FrameworkProject;
 import com.dtolabs.rundeck.core.common.INodeSet;
+import com.dtolabs.rundeck.core.common.IRundeckProject;
+import com.dtolabs.rundeck.core.resources.format.json.ResourceJsonFormatGenerator;
+import com.dtolabs.rundeck.core.resources.format.json.ResourceJsonFormatParser;
 import com.dtolabs.rundeck.core.tools.AbstractBaseTest;
 import com.dtolabs.rundeck.core.utils.FileUtils;
 import junit.framework.TestCase;
@@ -50,16 +53,14 @@ public class TestResourceFormatParserService extends AbstractBaseTest {
     public void setUp() {
         super.setUp();
         final Framework frameworkInstance = getFrameworkInstance();
-        final FrameworkProject frameworkProject = frameworkInstance.getFrameworkProjectMgr().createFrameworkProject(
-            PROJ_NAME);
-        File resourcesfile = new File(frameworkProject.getNodesResourceFilePath());
-        //copy test nodes to resources file
-        try {
-            FileUtils.copyFileStreams(new File("src/test/resources/com/dtolabs/rundeck/core/common/test-nodes1.xml"),
-                resourcesfile);
-        } catch (IOException e) {
-            throw new RuntimeException("Caught Setup exception: " + e.getMessage(), e);
-        }
+
+        final IRundeckProject frameworkProject = frameworkInstance.getFrameworkProjectMgr().createFrameworkProject(
+                PROJ_NAME);
+        generateProjectResourcesFile(
+                new File("src/test/resources/com/dtolabs/rundeck/core/common/test-nodes1.xml"),
+                frameworkProject
+        );
+
 
     }
 
@@ -72,7 +73,7 @@ public class TestResourceFormatParserService extends AbstractBaseTest {
     public void testBaseFormats() throws Exception {
 
         final ResourceFormatParserService service = new ResourceFormatParserService(getFrameworkInstance());
-        assertEquals(2, service.listFormats().size());
+        assertEquals(3, service.listFormats().size());
 
         final ResourceFormatParser parserForFormat = service.getParserForFormat(
             ResourceXMLFormatParser.SERVICE_PROVIDER_TYPE);
@@ -83,6 +84,11 @@ public class TestResourceFormatParserService extends AbstractBaseTest {
             ResourceYamlFormatParser.SERVICE_PROVIDER_TYPE);
         assertNotNull(parser2);
         assertTrue(parser2 instanceof ResourceYamlFormatParser);
+
+        final ResourceFormatParser parser3 = service.getParserForFormat(
+            ResourceJsonFormatParser.SERVICE_PROVIDER_TYPE);
+        assertNotNull(parser3);
+        assertTrue(parser3 instanceof ResourceJsonFormatParser);
     }
 
     static class testParser implements ResourceFormatParser {
@@ -115,18 +121,20 @@ public class TestResourceFormatParserService extends AbstractBaseTest {
 
         final ResourceFormatParserService service = new ResourceFormatParserService(getFrameworkInstance());
         final List<String> strings = service.listFormats();
-        assertEquals(2, strings.size());
+        assertEquals(3, strings.size());
         assertTrue(strings.contains(ResourceXMLFormatParser.SERVICE_PROVIDER_TYPE));
         assertTrue(strings.contains(ResourceYamlFormatParser.SERVICE_PROVIDER_TYPE));
+        assertTrue(strings.contains(ResourceJsonFormatParser.SERVICE_PROVIDER_TYPE));
 
         //add new format parser
         testParser parser = new testParser();
 
         service.registerInstance("testformat1", parser);
         final List<String> strings2 = service.listFormats();
-        assertEquals(3, strings2.size());
+        assertEquals(4, strings2.size());
         assertTrue(strings2.contains(ResourceXMLFormatParser.SERVICE_PROVIDER_TYPE));
         assertTrue(strings2.contains(ResourceYamlFormatParser.SERVICE_PROVIDER_TYPE));
+        assertTrue(strings2.contains(ResourceJsonFormatParser.SERVICE_PROVIDER_TYPE));
         assertTrue(strings2.contains("testformat1"));
     }
 

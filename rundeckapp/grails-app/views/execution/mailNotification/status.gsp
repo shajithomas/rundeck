@@ -21,9 +21,12 @@
    Created: May 17, 2010 6:30:25 PM
    $Id$
 --%>
-<%@ page contentType="text/html" %>
+<%@ page import="rundeck.Execution" contentType="text/html" %>
+<%
+    request.setAttribute("IS_MAIL_RENDERING_REQUEST",Boolean.TRUE)
+%>
 <html>
-<head><title>Execution <g:message code="status.label.${execution.status=='true'?'succeed':'fail'}"/></title>
+<head><title>Execution <g:message code="status.label.${execstate}"/></title>
     <style type="text/css">
     span.jobname {
         font-weight: bold;
@@ -76,6 +79,11 @@
         padding-left: 18px;
     }
 
+    .jobInfo .jobIcon.jobrunning {
+        background: transparent url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAABDQAAAQ0BROAatAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAADVSURBVDjLrZNBCsIwEEV7Ce/gtbyBew/gQQLtovQGXdaVK12YdCUI2oo2RW0tUuGbWaRgdSJCF0M2eY/8mYkHwPtWUsqRqSSKokscx2Pungtem4IQAmEYNpzECVuBS8LCaZpClyWUOYMgYCUsfKtr6PaJ473BIc9ZCQufHy3muwLT5QZ5zUuc8Gx7wmSxckpIkNiGUWZ6toWtwEooDvXENpZGPIigi6CU+hnB9/33CP0m9iUW3mfZB8yOkSTXqurGyMHORSJJoTWkOTl4+FUe5DP9+51f1mwg28gP3wsAAAAASUVORK5CYII=") top left no-repeat;
+        padding-left: 18px;
+    }
+
     .jobInfo .jobIcon.jobwarn {
         background: transparent url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAABDQAAAQ0BROAatAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAACSSURBVDjLY/j//z8DVnw6VxSIjzxfJvLx/WYTDVzq8Gm+BMT/H85l+P9sicB3XIbg1QwzAJ8heDX/P533/+E8JryG4NZ8tuj//9uz/7/aE/D/0QJOnIbg1fz/3uL/bw7F4zUEr2aYAfgMARlwBNnPyJqRDYAZghwmoCimigEUeoHiQKRKNFIlIVElKVMlM5GYnQFK8OAbsIEBoAAAAABJRU5ErkJggg==") top left no-repeat;
         padding-left: 18px;
@@ -92,12 +100,17 @@
     }
 
     .wfitem.jobtype {
-        background: transparent url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAABDQAAAQ0BROAatAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAACMSURBVDjLrZM7CsAgEERzidwh91ZsxAMIYpUTpNFWPEGqlJNYCBZxIGSL6fY92N8CYHlLSml9sjvnzhDCNqtj8PEESilYa6+ZhMJdwCQUbtFaU8kUzjmjlALvPYwxUwmFa62IMVIJhbuASZpgH3se4VHQJeNM2opFBP9a+D1EkTWKHJLIKYs809d3vgGUvhXOtSdGtQAAAABJRU5ErkJggg==") top left no-repeat;
+        background: transparent url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAQAAAC1+jfqAAAAjUlEQVQoz2NgAIL7Am73Bf+LoUDR/4r/kyaBZBlu8FrvlP5veFpsJgKKzBSdI3xF6T9Ygf8l8f8Gh4P1RCQRUFPyP5NIpyhEgSjQONHvIt/FfsKgyE+JnyqGou1iSAowoIjRiFEgil+BYIcyPgX8xpodyVPBCoSxKuC1ma/AAAHG/9GViPyX+W9lB5EFAP9Q0j0gWD5FAAAAAElFTkSuQmCC") top left no-repeat;
         padding-left: 18px;
     }
 
+    .wfitem.plugintype {
+        background: transparent url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAegAAAHoBlQypfwAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAAEBSURBVDiNrZMhcsMwFERfrBldSMRAMEBQJDcJaIiASAp8gRablRjqEqYhMtcZIuISu3VtuUlnuuxLf3f2a/UP4zhSQgjhBJynsjHGfJT6DiWBEMILcF0dX4wxr+ve6kkywHW623ewJOec6boOAGstUsqiky+BNdl7T9/3ACilcM4VRapHZIC+7/Hek3PejCPquj4Bb3vkGSklYoxorRFCAByHYbhVfEdF13VF8tLJ/C4TzpsU/ooKaObCWotSardZKYW1dnnUiLZtb8Mw3IGjEAKtNTFGUkobciGJ9wpgiuQCIKXEOffDyW8x/t9HKokUsNmHTQrLcR6Riw4WTp5a50+zQaPPZJVLUQAAAABJRU5ErkJggg==") top left no-repeat;
+        padding-left: 18px;
+
+    }
     .wfitem.exectype {
-        background: transparent url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAAd0SU1FB9oGDhIqGp1FVTYAAAAGYktHRAD/AP8A/6C9p5MAAAAJcEhZcwAACxMAAAsTAQCanBgAAAAidEVYdENvbW1lbnQAQ3JlYXRlZCB3aXRoIEdJTVAgb24gYSBNYWOHqHdDAAABgElEQVQ4y32TIXaEQBBE5wCsYAQIECBAgGDEIkDsChAgFrGIcAiOxgnqckl3zwAhL8ny/qvqqu5xqxT9vJu3et5tI0AeN8/D6Un3WdTjfOMbvlW+1qvv+9BaQ/sa4n32nFl8xmW+7Og9X1UQBlsYBgiCAGEYIiCus9WQ5+DMQ6ubiuMYcRyBNYqYyKnLo0g0YiKrciN9DJWkCZIkgfq0XypzijRNrRJJyppIJj13TlWW5cjy/HiAvyzPsJO7XvbEc+Y6vivLEmVZoCjKyyM8l0VBcO92Ds5MVZWBqSpUpoIx5vKI4c4wtuNd2aus5ztV13cI9/pyXNe1y7mvcXfwnp1trtq2Rdu0l+OGs7aRvG2aS/dzTz2eTzB7+CQvPB7Y/V8PSNd3Pfq+I3p0TEe+Y3V5Z/P+oKO5O2Y1jiPGcYBVYvg2DzYbHHu+e1Y1TdM2vSaQ4uUQ77LfsDsv9pt6z/NKYJ7fxPw/b9p5XzL7j1yWZSU2Aicfp/9wLIfyrhx/AdLaXIi7q5w8AAAAAElFTkSuQmCC") top left no-repeat;
+        background: transparent url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAUQAAAFEBjheh4wAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAAD4SURBVDiNpZOxSgNhEIS/XS/mMLFROQ5fQCtBfAVtFEF8B8UmTQobX8JWHyKNXUDxGdJF0uRqJWm00AtjkQuSGBL/c2CqZWeHYccABy6Bc2AHMBZDQBdoAfcAV0BeDEKYF7u0SyxP2AboW6Mmu1gTK8ECfQeMXo7drOOdBDuJl0QwBQPIABGb7LouH6ayx02xX/mLg+xHYMLdSP6ayvNt2WkcILBqsmZdPkjlz1viIMCBHVblvUT+ksjOll6dEogA2Kug23d09wFfCgmR3xmEMfPgczOICqW5sIcN7Kg6d6anT3T8JvjnKzvjVo1KuB8BrYiikpSs8zcLZrWZP+PxIQAAAABJRU5ErkJggg==") top left no-repeat;
         padding-left: 18px;
 
     }
@@ -206,30 +219,42 @@ div.progressContainer div.progressContent{
     </style>
 </head>
 <body>
+<g:set var="execfailed" value="${execstate in ['failed','aborted']}"/>
 <div class="content">
     <div class="report">
-        <g:render template="/scheduledExecution/showHead" model="[scheduledExecution:scheduledExecution,execution:execution,noimgs:true,absolute:true]"/>
+        <g:render template="/scheduledExecution/showExecutionHead" model="[scheduledExecution:scheduledExecution,execution:execution,noimgs:true,absolute:true]"/>
 
         <div class="presentation">
-            &bull; <span class="result ${execution?.status != 'true' ? 'fail' : ''}"><g:message code="status.label.${execution.status=='true'?'succeed':'fail'}"/></span>
+            &bull; <span class="result ${execfailed ? 'fail' : ''}"><g:message code="status.label.${execstate}"/></span>
+            <g:if test="${execution.customStatusString}">
+                "${execution.customStatusString}"
+            </g:if>
             <g:if test="${execution.dateCompleted && execution.dateStarted}">
             <span class="date">
-                in <g:timeDuration end="${execution?.dateCompleted}" start="${execution.dateStarted}"/>
+                after <g:timeDuration end="${execution?.dateCompleted}" start="${execution.dateStarted}"/>
             </span>
             </g:if>
-            - <g:link absolute="true" controller="execution" action="show" id="${execution.id}" title="View execution output">View Output &raquo;</g:link>
+            <g:if test="${execstate=='aborted'}">
+                by <em><g:enc>${execution.abortedby}</g:enc></em>
+            </g:if>
+            - <g:link absolute="true" controller="execution"
+                      params="[project: execution.project]"
+                      action="show" id="${execution.id}" title="View execution output">View Output &raquo;</g:link>
         </div>
+        <g:if test="${execstate!='running'}">
         <div class="presentation">
             &bull; <g:link class="filelink"
                 title="Download entire output file"
                 controller="execution"
                 action="downloadOutput"
                 absolute="true"
+                params="[project:execution.project]"
                 id="${execution.id}">
                 Download Output
             </g:link>
-             <g:if test="${filesize}">(${filesize} bytes)</g:if>
+             <g:if test="${filesize}">(<g:enc>${filesize}</g:enc> bytes)</g:if>
         </div>
+        </g:if>
 
         <span class="prompt">Execution</span>
         <div class="presentation">
@@ -240,7 +265,7 @@ div.progressContainer div.progressContent{
             <table class="executionInfo">
                 <tr>
                     <td>User:</td>
-                    <td>${execution?.user}</td>
+                    <td><g:enc>${execution?.user}</g:enc></td>
                 </tr>
                 <g:if test="${null!=execution.dateCompleted && null!=execution.dateStarted}">
 
@@ -255,7 +280,7 @@ div.progressContainer div.progressContent{
                     <td>
                         <g:relativeDate elapsed="${execution.dateStarted}" agoClass="timeago"/>
                     </td>
-                    <td><span class="timeabs">${execution.dateStarted}</span></td>
+                    <td><span class="timeabs"><g:enc>${execution.dateStarted}</g:enc></span></td>
                 </tr>
                 </g:if>
                 <g:else>
@@ -269,7 +294,7 @@ div.progressContainer div.progressContent{
                         <td>
                             <g:relativeDate elapsed="${execution.dateCompleted}" agoClass="timeago"/>
                         </td>
-                        <td><span class="timeabs">${execution.dateCompleted}</span></td>
+                        <td><span class="timeabs"><g:enc>${execution.dateCompleted}</g:enc></span></td>
                     </tr>
                 </g:if>
             </table>
@@ -277,11 +302,8 @@ div.progressContainer div.progressContent{
                     </td>
                     <g:if test="${scheduledExecution}">
                         <td style="vertical-align:top;" class="toolbar small">
-                            %{--<g:render template="/scheduledExecution/actionButtons" model="${[scheduledExecution:scheduledExecution,objexists:objexists,jobAuthorized:jobAuthorized,execPage:true]}"/>--}%
-                            <g:set var="successcount" value="${scheduledExecution.id?Execution.countByScheduledExecutionAndStatus(scheduledExecution,'true'):0}"/>
-                            <g:set var="execCount" value="${scheduledExecution.id?Execution.countByScheduledExecution(scheduledExecution):0}"/>
-                            <g:set var="successrate" value="${execCount>0? (successcount/execCount) : 0}"/>
-                            <g:render template="/scheduledExecution/showStats" model="[scheduledExecution:scheduledExecution,lastrun:null, successrate:successrate]"/>
+                            <g:render template="/scheduledExecution/renderJobStats"
+                                      model="${[scheduledExecution: scheduledExecution]}"/>
                         </td>
                     </g:if>
                 </tr>
@@ -289,7 +311,7 @@ div.progressContainer div.progressContent{
         </div>
         <span class="prompt">Details</span>
         <div class="presentation" id="schedExDetails${scheduledExecution?.id}">
-            <g:render template="/execution/execDetails" model="[execdata:execution,noimgs:true,nomatchednodes:true]"/>
+            <g:render template="/execution/execDetails" model="[showEdit:false, execdata:execution,noimgs:true,nomatchednodes:true]"/>
         </div>
         %{--<g:set var="nodestatus" value="${[succeeded:20,failed:0,total:20]}"/>--}%
         <g:if test="${nodestatus || execution?.failedNodeList}">
@@ -298,7 +320,7 @@ div.progressContainer div.progressContent{
                 <g:if test="${nodestatus }">
                         <g:set var="vals" value="${[nodestatus.succeeded,nodestatus.failed,nodestatus.total]}"/>
                         <g:set var="summary" value=""/>
-                        <g:if test="${vals && vals.size()>2 && vals[2]!='0'}">
+                        <g:if test="${vals && vals.size()>2 && vals[2]!='0' && vals[2]!=0}">
                             <g:set var="a" value="${vals[0] instanceof String? Integer.parseInt(vals[0]):vals[0]}"/>
                             <g:set var="fai" value="${vals[1] instanceof String? Integer.parseInt(vals[1]):vals[1]}"/>
                             <g:set var="den" value="${vals[2] instanceof String? Integer.parseInt(vals[2]):vals[2]}"/>
@@ -314,10 +336,10 @@ div.progressContainer div.progressContent{
                             <g:set var="perc" value="${0}"/>
                         </g:else>
                         <g:if test="${vals && vals.size()>1 && vals[1]!='0' && vals[1]!=0}">
-                            ${vals[1]} failed
+                            <g:enc>${vals[1]}</g:enc> failed
                         </g:if>
                         <g:else>
-                            ${vals[0]} ok
+                            <g:enc>${vals[0]}</g:enc> ok
                         </g:else>
                         <g:if test="${perc>0}">
                         <g:render template="/common/progressBar" model="${[completePercent:(int)perc,title:'Failed nodes',className:'nodes failure',showpercent:false,innerContent:summary]}"/>
@@ -326,19 +348,20 @@ div.progressContainer div.progressContent{
                 <g:if test="${execution?.failedNodeList}">
                         <g:set var="failednodes" value="${execution?.failedNodeList.split(',')}"/>
                         <g:if test="${!nodestatus}">
-                        ${failednodes.length} failed:
+                        <g:enc>${failednodes.length}</g:enc> failed:
                         </g:if>
-                        <div>${execution?.failedNodeList}</div>
+                        <div><g:enc>${execution?.failedNodeList}</g:enc></div>
                 </g:if>
             </div>
         </g:if>
     </div>
 </div>
 <div class="foot">
-    Run Deck:
-    <g:link absolute="true" controller="framework" action="nodes"><g:message code="gui.menu.Run"/> &raquo;</g:link>
-    <g:link absolute="true" controller="menu" action="jobs"><g:message code="gui.menu.Workflows"/> &raquo;</g:link>
-    <g:link absolute="true" controller="reports" action="index"><g:message code="gui.menu.Events"/> &raquo;</g:link>
+    <g:appTitle/> :
+    <g:enc>${execution.project}</g:enc>
+    <g:link absolute="true" controller="framework" params="[project: execution.project]" action="nodes"><g:message code="gui.menu.Nodes"/> &raquo;</g:link>
+    <g:link absolute="true" controller="menu" params="[project: execution.project]" action="jobs"><g:message code="gui.menu.Workflows"/> &raquo;</g:link>
+    <g:link absolute="true" controller="reports" params="[project: execution.project]" action="index"><g:message code="gui.menu.Events"/> &raquo;</g:link>
 </div>
 
 </body>

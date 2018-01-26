@@ -1,13 +1,12 @@
 % Configuration
 
 
-## Configuration layout
+# Configuration layout
 
 Configuration file layout differs between the RPM and Launcher
-installation methods. See [RPM layout](configuration.html#rpm-layout) and
-[Launcher layout](configuration.html#launcher-layout) for details.
+installation methods.
 
-### RPM layout
+## RPM layout
 
     /etc/rundeck
     |-- admin.aclpolicy
@@ -23,8 +22,9 @@ installation methods. See [RPM layout](configuration.html#rpm-layout) and
         |-- ssl.properties
         |-- keystore (not packaged)
         `-- truststore (not packaged)
+    /var/lib/rundeck/exp/webapp/WEB-INF/web.xml
 
-### Launcher layout
+## Launcher layout
 
     $RDECK_BASE/etc
     |-- admin.aclpolicy
@@ -37,33 +37,29 @@ installation methods. See [RPM layout](configuration.html#rpm-layout) and
     |-- realm.properties
     `-- rundeck-config.properties
 
-## Configuration files
+# Configuration files
 Configuration is specified in a number of standard Rundeck
 configuration files generated during the installation process.
 
-See the [Configuration layout](configuration.html#configuration-layout) section for where these
-files reside for RPM and Launcher installations.
-
 The purpose of each configuration file is described in its own section.
 
-### admin.aclpolicy
+## admin.aclpolicy
 
-Administrator access control policy defined with a "aclpolicy(5)" XML
+Administrator access control policy defined with a [aclpolicy]
 document.
 
-This file governs the access for the "admin" group and role. 
+This file governs the access for the "admin" group and role.
 
-See [Authorization](../manual/getting-started.html#authorization) for information about setting up
-policy files for other user groups.
+See [role based access control](access-control-policy.html) for information about setting up policy files for other user groups.
 
-### framework.properties
+## framework.properties
 
 Configuration file used by shell tools and core Rundeck services. This file will be created for you at install time.
 
 Some important settings:
 
-* `framework.node.hostname`: Hostname of the Rundeck server node
-* `framework.node.name`: Name (identity) of the Rundeck server node
+* `framework.server.hostname`: Hostname of the Rundeck server node
+* `framework.server.name`: Name (identity) of the Rundeck server node
 * `framework.projects.dir`: Path to the directory containing Rundeck Project directories.  Default is `$RDECK_BASE/projects`.
 * `framework.var.dir`: Base directory for output and temp files used by the server and CLI tools. Default is `$RDECK_BASE/var`.
 * `framework.logs.dir`: Directory for log files written by core services and Rundeck Server's Job executions. Default is `$RDECK_BASE/var/logs`
@@ -71,10 +67,6 @@ Some important settings:
 * `framework.server.password`: Password for connection to the Rundeck server
 * `framework.rundeck.url`: Base URL for Rundeck server.
 
-Resource Provider settings:
-
-* `framework.resources.allowedURL.X`: a sequence of regular expressions (for `X` starting at 0 and increasing). These are matched against requested providerURL values when
-the `/project/name/resources/refresh` API endpoint is called. See [Refreshing Resources for a Project](../api/index.html#refreshing-resources-for-a-project).
 
 SSH Connection settings:
 
@@ -86,198 +78,260 @@ Other settings:
 
 * `framework.log.dispatch.console.format`: Default format for non-terse node execution logging run by the `dispatch` CLI tool.
 
-### log4j.properties
+Static authentication tokens for API access:
+
+You can define the location of a .properties file in framework.properties:
+
+* `rundeck.tokens.file=/etc/rundeck/tokens.properties`
+
+The `tokens.properties` file should contain static authentication tokens you wish to use, keyed by the associated username:
+
+    username: token_string
+    username2: token_string2
+    ...
+
+The token_strings can be used as Authentication tokens to the [API](../api/index.html#token-authentication).
+
+## log4j.properties
 
 Rundeck uses [log4j] as its application logging facility. This file
-defines the logging configuration for the Rundeck server. 
+defines the logging configuration for the Rundeck server.
 
 [log4j]: http://logging.apache.org/log4j/
 
-### profile
+## profile
 
 Shell environment variables used by the shell tools. This file
 contains several parameters needed during the startup of the shell
 tools like umask, Java home and classpath, and SSL options.
 
-### project.properties
+## project.properties
 
-Rundeck [project](../manual/getting-started.html#project) configuration file. One of these is
-generated at project setup time. 
+Rundeck project configuration file when using Filsystem based project defintions (see [Project Setup - Project Definitions](project-setup.html#project-definitions)).
 
-Property                          Description
-----------                        -------------
-`project.resources.file`          A local file path to read a resource model          document
-`project.resources.url`           The URL to an external [Resource Model Source](node-resource-sources.html#resource-model-source).(Optional) 
-`project.resources.allowedURL.X`  A sequence of regular expressions (for `X` starting at 0 and increasing). 
-`resources.source.N...`               Defines a Resource model source see [Resource Model Sources](../manual/plugins.html#resource-model-sources).
+One of these is
+generated at project setup time. Each project has a directory within the Rundeck projects directory, and the config file is within the `etc` subdirectory:
+
+    $RDECK_BASE/projects/[PROJECT-NAME]/etc/project.properties
+
+Property                                  Description
+----------                                -------------
+`project.name`                            Declare the project name.
+`project.ssh-authentication`              SSH authentication type (eg, privateKey).
+`project.ssh-keypath`                     SSH identify file.
+`service.FileCopier.default.provider`     Default script file copier plugin.
+`service.NodeExecutor.default.provider`   Default node executor plugin.
+`resources.source.N...`                   Defines a Resource model source see [Resource Model Sources].
 ----------------------------------
 
-The `project.resources.allowedURL.X` values are matched against requested providerURL values when
-the `/project/name/resources/refresh` API endpoint is called. See [Refreshing Resources for a Project](../api/index.html#refreshing-resources-for-a-project).
+Here's an example that configures a File source:
 
-### jaas-loginmodule.conf
+~~~~~~~~~~
+resources.source.1.config.file=/var/rundeck/projects/${project.name}/etc/resources.xml
+resources.source.1.config.generateFileAutomatically=true
+resources.source.1.config.includeServerNode=true
+resources.source.1.type=file
+~~~~~~~~~~~
+
+Another that configures a URL source:
+
+~~~~~~~~
+resources.source.2.config.cache=true
+resources.source.2.config.timeout=30
+resources.source.2.config.url=http\://example.com/nodes
+resources.source.2.type=url
+~~~~~~~~~
+
+And one that configures a Directory source:
+
+~~~~~~~~~~
+resources.source.3.config.directory=/var/rundeck/projects/${project.name}/site_nodes
+resources.source.3.type=directory
+~~~~~~~~~~~~
+
+Additional sources increment the source number. You can reference the project name by using the `${project.name}` context variable.
+
+## jaas-loginmodule.conf
 
 [JAAS] configuration for the Rundeck server. The listing below
 shows the file content for a normal RPM installation. One can see it
-specifies the use of the [PropertyFileLoginModule]:
+specifies the use of the PropertyFileLoginModule:
 
     RDpropertyfilelogin {
-      org.mortbay.jetty.plus.jaas.spi.PropertyFileLoginModule required
+      org.eclipse.jetty.plus.jaas.spi.PropertyFileLoginModule required
       debug="true"
       file="/etc/rundeck/realm.properties";
     };
 
-[JAAS]: http://docs.codehaus.org/display/JETTY/JAAS
-[PropertyFileLoginModule]: http://jetty.codehaus.org/jetty/jetty-6/apidocs/org/mortbay/jetty/plus/jaas/spi/PropertyFileLoginModule.html
+[JAAS]: https://wiki.eclipse.org/Jetty/Feature/JAAS
 
-### realm.properties
+## realm.properties
 
 Property file user directory when PropertyFileLoginModule is
-used. Specified from [jaas-loginmodule.conf](configuration.html#jaas-loginmodule.conf).
+used. Specified from [jaas-loginmodule.conf](#jaas-loginmodule.conf).
 
-### rundeck-config.properties
+## Session timeout
 
-The primary Rundeck webapp configuration file. Defines default
+Edit the web.xml to modify session-timeout from 30 to 90 minutes:
+
+RPM: /var/lib/rundeck/exp/webapp/WEB-INF/web.xml
+
+Example: Set the timeout to 60 minutes:
+
+~~~~
+diff /var/lib/rundeck/exp/webapp/WEB-INF/web.xml web.xml
+
+214c214
+
+< <session-timeout>30</session-timeout>
+
+---
+
+> <session-timeout>90</session-timeout>
+~~~~
+
+## rundeck-config.properties
+
+This is the primary Rundeck webapp configuration file. Defines default
 loglevel, datasource configuration, and
 [GUI customization](gui-customization.html).
 
-#### Notification email settings
+The following sections describe configuration values for this file.
 
-The URL and From: address used in email notifications are managed via the settings located in the rundeck-config.properties file.
+### Security
 
-The two properties are:
+* `rundeck.security.useHMacRequestTokens` : `true/false`.  Default: `true`.
+   Switches between HMac based request tokens, and the default grails UUID
+   tokens.  HMac tokens have a timeout, which may cause submitted forms or
+   actions to fail with a message like "Token has expired".  
+   If set to false, UUIDs will be used instead of HMac tokens,
+   and they have no timeouts.
+   The default timeout for tokens can be changed with the
+   `-Dorg.rundeck.web.infosec.HMacSynchronizerTokensHolder.DEFAULT_DURATION=[timeout in ms]`.
 
-* grails.serverURL
-* grails.mail.default.from
+* `rundeck.security.apiCookieAccess.enabled`: `true/false`. Default: `true`.  
+    Determines whether access to the API is allowed if the API client
+    authenticates via session cookies (i.e. username and password login.)  If
+    set to `false`, the current CLI tools and API libraries will not operate
+    correctly if they use username and password login.
 
-Here's an example:
+### Execution Mode
 
-    grails.serverURL=https://node.fully.qualified.domain.name:4443
-    grails.mail.default.from=deployer@domain.com
+* `rundeck.executionMode`:`active/passive`. Default `active`. Set the Execution
+  Mode for the Rundeck server.
 
-## GUI Admin Page
+Rundeck can be in `active` or `passive` execution mode.
 
-The Rundeck GUI has an Admin Page which contains lets you view and manage some configuration options.  If you have `admin` role access, when you log in you will see an "Admin" link in the header of the page near your username:
+* `active` mode: Jobs, scheduled Jobs, and adhoc executions can be run.
+* `passive` mode: No Jobs or adhoc executions can be run.
 
-![Admin page link](../figures/fig0701.png)
+Setting Rundeck to `passive` mode prevents users from running anything on the
+system and is useful when managing Rundeck server clusters.
 
-Clicking on this link will take you to the Admin Page:
+### Project Configuration Storage settings
 
-![Admin page](../figures/fig0702.png)
+The [Project Setup - Project Definitions](project-setup.html#project-definitions) mechanism is configured within this file, see:
 
-This page contains links to two sub-pages, and configuration information about the currently selected Project.
+* [Project Storage][]
 
-### System Information Page
+[Project Storage]: storage-facility.html#project-storage
 
-The System Information page gives you a breakdown of some of the Rundeck server's system statistics and information:
+### Key Storage settings
 
-![System Info Page](../figures/fig0703.png)
+The [Key storage](key-storage.html) mechanism is configured within this file, see:
 
-This information is also available via the API: [API > System Info](../api/index.html#system-info)
+* [Configuring Storage Plugins][]
+* [Configuring Storage Converter Plugins][]
 
-### User Profiles Page
+[Configuring Storage Plugins]: ../plugins-user-guide/configuring.html#storage-plugins
+[Configuring Storage Converter Plugins]: ../plugins-user-guide/configuring.html#storage-converter-plugins
 
-The User Profiles page lists all User Profile records in the system. User Profiles are used to store some user preferences, and can be used to generate API Tokens for admin users.
+### Notification email settings
 
-![User Profiles Page](../figures/fig0704.png)
+See [Email Settings: Notification email settings](email-settings.html#notification-email-settings)
 
-### Project Configuration
+### Custom Email Templates
 
-The selected project will be displayed with basic configuration options, and the list of configure Resource Model Sources, as well as the default Node Executor and File Copier settings.
+See [Email Settings: Custom Email Templates](email-settings.html#custom-email-templates)
 
-If you click on "Configure Project", you will be taken to the Project Configuration form.
+### Execution finalize retry settings
 
-![Project Configuration Form](../figures/fig0705.png)
+If a sporadic DB connection failure happens when an execution finishes, Rundeck may fail to update the state of the execution in the database, causing the execution to appear is if it is still "running".
 
-The first two fields allow configuration of some simple project basics.
+Rundeck now attempts to retry the update to correctly register the final state of the execution.  You can tune how many times and how often this retry occurs with these config values:
 
-First, you can enter a URL for a Resource Model Source, which will be used as a URL Resource Model Source with default configuration options.
+    # attempt to retry the final state update
+    rundeck.execution.finalize.retryMax=10
+    rundeck.execution.finalize.retryDelay=5000
 
-Secondly, you can enter the Default SSH Key File, which is the private SSH Key file used
-by default for SSH and SCP actions.  If you are not using SSH or SCP you do not have to enter one.
+    # attempt to retry updating job statistics after execution finishes
+    rundeck.execution.stats.retryMax=3
+    rundeck.execution.stats.retryDelay=5000
 
-There are then several more sections: Resource Model Sources, Default Node Executor, and Default File Copier sections. These are described below:
+Delay is in milliseconds. If a max is set to `-1`, then retries will happen indefinitely.
 
-### Resource Model Sources Configuration
+### Metrics servlets
 
-This section lets you add and modify [Resource Model Sources](../manual/plugins.html#resource-model-sources) for the project.
+Rundeck includes the [Metrics](http://metrics.codahale.com) servlets.  You can selectively disable these by setting these config values:
 
-To add a new one, click "Add Source". You are prompted to select a type of source. The list shown will include all of the built-in types of sources, as well as any Plugins you have installed.
+`rundeck.web.metrics.servlets.[name].enabled=true/false`
 
-![Add Resource Model Source](../figures/fig0706.png)
+Servlet names are:
 
-When you click "Add" for a type, you will be shown the configuration options for the type. 
+* `metrics`
+* `threads`
+* `ping`
+* `healthcheck`
 
-![Configure Resource Model Source](../figures/fig0707.png)
+All of the servlets are enabled by default.
 
-You can then click "Cancel" or "Save" to discard or add the configuration to the list. 
+[Resource Model Sources]: ../administration/managing-node-sources.html
 
-Each item you add will be shown in the list:
+### Pagination defaults
 
-![Configured Source](../figures/fig0708.png)
+Default paging size for the Activity page and results from execution API queries can be changed.
 
-To edit an item in the list click the "Edit" button.  To delete an item in the list click the "Delete" button.
+    rundeck.pagination.default.max=20
 
-Each type of Resource Model Source will have different configuration settings of its own. The built-in Resource Model Source providers are shown below.
+### Job Remote Option URL connection parameters
 
-You can install more sources as plugins, see [Resource Model Source Plugins](../manual/plugins.html#resource-model-source-plugins).
+Change the defaults for for [Job Remote Option Value URLs](../manual/jobs.html#remote-option-values) loading.
 
-#### File Resource Model Source
+**Socket read timeout**
 
-This is the File Resource Model Source configuration form:
+Max wait time reading from socket.
 
-![File Resource Model Source](../figures/fig0707.png)
+Default value: `10` (seconds)
 
-See [File Resource Model Source Configuration](../manual/plugins.html#file-resource-model-source-configuration) for more configuration information.
+Change this by setting:
 
-#### Directory Resource Model Source
+    rundeck.jobs.options.remoteUrlTimeout=[seconds]
 
-Allows a directory to be scanned for resource document files. All files
-with an extension supported by one of the [Resource Model Document Formats](../manual/rundeck-basics.html#resource-model-document-formats) are included.
+**Connection timeout**
 
-![Directory Resource Model Source](../figures/fig0709.png)
+Max wait time attempting to make the connection.
 
-See [Directory Resource Model Source Configuration](../manual/plugins.html#directory-resource-model-source-configuration) for more configuration information.
+Default value: (no timeout)
 
-#### Script Resource Model Source
+Change this by setting:
 
-This source can run an external script to produce the resource model 
-definitions.
+    rundeck.jobs.options.remoteUrlConnectionTimeout=[seconds]
 
-![Script Resource Model Source](../figures/fig0710.png)
+**No response retry**
 
-See [Script Resource Model Source Configuration](../manual/plugins.html#script-resource-model-source-configuration) for more configuration information.
+If the request is sent, but the server disconnects without a response (e.g. server is overloaded), retry the request this many times.
 
-#### URL Resource Model Source
+Default value: 3
 
-This source performs a HTTP GET request on a URL to return the 
-resource definitions.
+Change this by setting:
 
-![URL Resource Model Source](../figures/fig0711.png)
+    rundeck.jobs.options.remoteUrlRetry=[total]
 
-See [URL Resource Model Source Configuration](../manual/plugins.html#url-resource-model-source-configuration) for more configuration information.
+### Groovy config format
+You can change you rundeck-config.properties to a rundeck-config.groovy, but you will need to modify the syntax to be groovy, and you will need to point rundeck at the new filename when you start up rundeck:
 
-### Default Node Executor Configuration
+Launcher:
 
-When Rundeck executes a command on a node, it does so via a "Node Executor".
-The most common built-in Node Executor is the "SSH" implementation, which uses
-SSH to connect to the remote node, however other implementations can be used.
+    java -jar -Drundeck.config.name=rundeck-config.groovy rundeck-launcher.jar
 
-Select the Default Node Executor you wish to use for all remote Nodes for the project:
-
-![Default Node Executor Choice](../figures/fig0712.png)
-
-You can install more types of Node Executors as plugins, see [Node Execution Plugins](../manual/plugins.html#node-execution-plugins).
-
-### Default File Copier Configuration
-
-When Rundeck executes a script on a node, it does so by first copying the script as a file to the node, via a "File Copier". (It then uses a "Node Executor" to execute the script like a command.)
-
-The most common built-in File Copier is the "SCP" implementation, which uses
-SCP to copy the file to the remote node, however other implementations can be used.
-
-Select the Default File Copier you wish to use for all remote Nodes for the project:
-
-![Default File Copier Choice](../figures/fig0713.png)
-
-You can install more types of File Copiers as plugins, see [Node Execution Plugins](../manual/plugins.html#node-execution-plugins).
+RPM/DEB: Modify the RDECK_JVM variable in /etc/rundeck/profile, and set the "-Drundeck.config.name=/etc/rundeck/rundeck-config.groovy" entry to point to the correct file.

@@ -19,17 +19,12 @@
  */
 package com.dtolabs.rundeck.core.authorization.providers;
 
-import com.dtolabs.rundeck.core.authorization.Attribute;
-import com.dtolabs.rundeck.core.authorization.Authorization;
-import com.dtolabs.rundeck.core.authorization.Decision;
-import com.dtolabs.rundeck.core.authorization.Explanation;
+import com.dtolabs.rundeck.core.authorization.*;
 import com.dtolabs.rundeck.core.authorization.Explanation.Code;
 import org.apache.log4j.Logger;
 
 import javax.security.auth.Subject;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.IOException;
 import java.io.PrintStream;
 import java.security.Principal;
 import java.util.*;
@@ -38,7 +33,7 @@ import java.util.*;
  * Given a Subject, Action, Resource and Environment deliver an authorization decision.
  * 
  * @author noahcampbell
- *
+ * @deprecated
  */
 public class SAREAuthorization implements Authorization {
     
@@ -53,37 +48,38 @@ public class SAREAuthorization implements Authorization {
      * 
      * @param directory The directory to ready *.aclpolicy from.
      * 
-     * @throws IOException
-     * @throws PoliciesParseException
      */
-    public SAREAuthorization(File directory) throws IOException, PoliciesParseException {
+    public SAREAuthorization(File directory)  {
         policies = Policies.load(directory);
         baseDirectory = directory;
     }
-    
     /**
-     * Convenience constructor that looks in a predefine spot for policy files.
-     * 
-     * @throws IOException
-     * @throws PoliciesParseException
+     * Create an authorization object that uses understands the .aclpolicy files.
+     *
+     * @param policies Loaded policies
+     *
      */
-    public SAREAuthorization() throws IOException, PoliciesParseException {
-        this(new File("/etc/rundeck/security.d/"));
+    public SAREAuthorization(final Policies policies)  {
+        this.policies=policies;
+        baseDirectory = null;
     }
-    
+
     /**
      * 
-     * @param resource
-     * @param subject
-     * @param action
-     * @param environment
+     * @param resource resource
+     * @param subject subject
+     * @param action action
+     * @param environment environment
+     * @param contexts contexts
      * @return decision
      */
-    private Decision internalEvaluate(Map<String, String> resource, Subject subject, String action, 
-            Set<Attribute> environment) {
-        
+    private Decision internalEvaluate(Map<String, String> resource, Subject subject, String action,
+                                      Set<Attribute> environment, List<AclContext> contexts) {
         long start = System.currentTimeMillis();
-        
+        if (contexts.size() < 1) {
+            return authorize(false, "No context matches subject or environment", Code.REJECTED_NO_SUBJECT_OR_ENV_FOUND,
+                    resource, subject, action, environment, System.currentTimeMillis() - start);
+        }
         if(resource == null) {
             throw new IllegalArgumentException("Resource does not identify any resource because it's an empty resource property or null.");
         } else {
@@ -108,14 +104,7 @@ public class SAREAuthorization implements Authorization {
         
         this.decisionsMade++;
         
-//        long narrowStart = System.currentTimeMillis();
-        List<AclContext> contexts = policies.narrowContext(subject, environment);
-        //long narrowDuration = System.currentTimeMillis() - narrowStart;
-        
-        if(contexts.size() <= 0) {
-            return authorize(false, "No context matches subject or environment", Code.REJECTED_NO_SUBJECT_OR_ENV_FOUND, resource, subject, action, environment, System.currentTimeMillis() - start);
-        }
-        
+
         ContextDecision contextDecision = null;
         ContextDecision lastDecision = null;
 
@@ -152,9 +141,16 @@ public class SAREAuthorization implements Authorization {
      * 
      */
     public Decision evaluate(Map<String, String> resource, Subject subject, 
-            String action, Set<Attribute> environment) {     
-        
-        Decision decision = internalEvaluate(resource, subject, action, environment);
+            String action, Set<Attribute> environment) {
+        return evaluate(resource, subject, action, environment, getPolicies().narrowContext(subject, environment));
+    }
+    /**
+     * Return the evaluation decision for the resource, subject, action, environment and contexts
+     */
+    private Decision evaluate(Map<String, String> resource, Subject subject,
+                             String action, Set<Attribute> environment, List<AclContext>contexts) {
+
+        Decision decision = internalEvaluate(resource, subject, action, environment, contexts);
         StringBuilder sb = new StringBuilder();
         sb.append("Evaluating ").append(decision).append(" (").append(decision.evaluationDuration()).append("ms)");
         logger.info(sb.toString());
@@ -167,9 +163,10 @@ public class SAREAuthorization implements Authorization {
         
         Set<Decision> decisions = new HashSet<Decision>();
         long duration=0;
+        List<AclContext> aclContexts = getPolicies().narrowContext(subject, environment);
         for(Map<String, String> resource: resources) {
             for(String action: actions) {
-                final Decision decision = evaluate(resource, subject, action, environment);
+                final Decision decision = evaluate(resource, subject, action, environment, aclContexts);
                 duration += decision.evaluationDuration();
                 decisions.add(decision);
             }
@@ -268,16 +265,19 @@ public class SAREAuthorization implements Authorization {
 
     @Override
     public String toString() {
-        return getClass().getName() + " (" + this.policies.count() + ") [" + this.baseDirectory.toString() + "]";
+        return getClass().getName() + " (" + this.getPolicies().count() + ") [" + this.baseDirectory.toString() + "]";
     }
 
     /**
      * This WILL be refactored.
-     * @return
+     * @return role list
      */
     @Deprecated
     public List<String> hackMeSomeRoles() {
-        return policies.listAllRoles();
+        return getPolicies().listAllRoles();
     }
 
+    public Policies getPolicies() {
+        return policies;
+    }
 }

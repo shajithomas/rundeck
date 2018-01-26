@@ -2,44 +2,50 @@
     <span class="warn note">None</span>
 </g:if>
 <g:if test="${nodes && nodes.size()>0}">
-    <div class="presentation clear">
-    <g:render template="tagsummary" model="${[tagsummary:tagsummary,link:[action:'nodes',controller:'framework',param:'nodeIncludeTags']]}"/>
+    <g:if test="${tagsummary}">
+    <div class="row">
+    <div class="col-sm-12">
+    <div class=" col-inset">
+            <g:render template="tagsummary" model="${[tagsummary:tagsummary,link:[action:'nodes',controller:'framework',param:'nodeIncludeTags']]}"/>
     </div>
-    <table cellpadding="0" cellspacing="0" width="100%" id="nodesTable">
-        <g:if test="${!page || page=='0'}">
-            <tr>
-                <th>Name</th>
-                <th>Description</th>
-                <th>Tags</th>
-                <th>Username</th>
-                <th>Hostname</th>
-                <th></th>
-            </tr>
-        </g:if>
-        <g:render template="nodesTableContent" model="${[nodes:nodes,params:params,total:total,allcount:allcount,page:page,max:max,nodeauthrun:nodeauthrun]}"/>
+    </div>
+    </div>
+    </g:if>
+    <div class="row row-space">
+    <div class="col-sm-12 ">
+    <table cellpadding="0" cellspacing="0" width="100%" id="nodesTable" class="nodesTable">
+        <g:render template="nodesTableContent" model="${[nodes:nodes, colkeys: colkeys,params:params,total:total,allcount:allcount,page:page,max:max,nodeauthrun:nodeauthrun]}"/>
     </table>
+    </div>
+    </div>
     <g:if test="${page==0 && (page+1*max<total)}">
-        <div id="nodesPaging">
-            %{--${nodes.size()}/${allcount} (page ${page} in ${max})--}%
+        <div class="row row-space" data-bind="visible: hasMoreNodes">
+        <div class="col-sm-12" id="nodesPaging">
             <g:set var="remainCount" value="${total - (page+1*max)}"/>
             <g:if test="${remainCount>max}">
-            <span id="nextPageButton" class="action button" onclick="_loadNextNodesPageTable(${max},${total},'nodesTable','nodesPaging');" title="Load next ${max} nodes...">Next ${max}&hellip;</span>
+            <span
+                    id="nextPageButton"
+                    class="textbtn textbtn-default nodes_paging_next"
+                    data-node-table-id="nodesTable"
+                    data-node-paging-id="nodesPaging"
+                    data-bind="click: updateNodesNextPage, visible: hasMultiplePages"
+                    title="Load next ${enc(attr:max)} nodes...">Next <g:enc>${max}</g:enc>&hellip;</span>
             </g:if>
-            <span class="action button" onclick="_loadNextNodesPageTable(${max},-1,'nodesTable','nodesPaging');" title="Load all remaining nodes...">Load all <span id="moreCount">${remainCount}</span>&hellip;</span>
+            <span
+                    class="textbtn textbtn-default nodes_paging_all"
+                    data-node-table-id="nodesTable"
+                    data-node-paging-id="nodesPaging"
+                    data-bind="click: updateNodesRemainingPages"
+                    title="Load all remaining nodes...">Load <span data-bind="text: pageRemaining"></span> remaining&hellip;</span>
+        </div>
         </div>
     </g:if>
-
-    <g:javascript>
-        if(typeof(initTooltipForElements)=='function'){
-            initTooltipForElements('tr.node_entry span.node_ident');
-        }
-    </g:javascript>
 </g:if>
-<g:render template="/common/boxinfo" model="${[name:'nodetable',model:[total:nodes?.size()]]}"/>
+<g:render template="/common/boxinfo" model="${[name:'nodetable',model:[total:nodes?.size(),allcount:total,filter:query?.filter]]}"/>
 
 <div id="remoteEditholder" style="display:none" class="popout">
     <span id="remoteEditHeader">
-            <span class="welcomeMessage">Edit node: <g:img file="icon-small-Node.png" width="16px" height="16px"/> <span id="editNodeIdent"></span></span>
+            <span class="welcomeMessage">Edit node: <i class="rdicon node icon-small"></i> <span id="editNodeIdent"></span></span>
     </span>
     <span class="toolbar" id="remoteEditToolbar">
         <span class="action " onclick="_remoteEditCompleted();" title="Close the remote edit box and discard any changes"><g:img file="icon-tiny-removex-gray.png" /> Close remote editing</span>

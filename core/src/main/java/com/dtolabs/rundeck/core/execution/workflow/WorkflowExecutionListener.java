@@ -25,22 +25,62 @@ package com.dtolabs.rundeck.core.execution.workflow;
 
 import com.dtolabs.rundeck.core.common.INodeEntry;
 import com.dtolabs.rundeck.core.execution.ExecutionContext;
-import com.dtolabs.rundeck.core.execution.ExecutionItem;
 import com.dtolabs.rundeck.core.execution.ExecutionListener;
-
-import java.util.*;
+import com.dtolabs.rundeck.core.execution.StatusResult;
+import com.dtolabs.rundeck.core.execution.StepExecutionItem;
+import com.dtolabs.rundeck.core.execution.workflow.steps.StepExecutionResult;
+import com.dtolabs.rundeck.core.execution.workflow.steps.StepExecutor;
+import com.dtolabs.rundeck.core.execution.workflow.steps.node.NodeStepExecutionItem;
+import com.dtolabs.rundeck.core.execution.workflow.steps.node.NodeStepResult;
 
 /**
  * WorkflowExecutionListener is ...
  *
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  */
-public interface WorkflowExecutionListener extends ExecutionListener {
+public interface WorkflowExecutionListener  {
 
-    public void beginWorkflowExecution(ExecutionContext executionContext, WorkflowExecutionItem item);
+    public void beginWorkflowExecution(StepExecutionContext executionContext, WorkflowExecutionItem item);
 
-    public void finishWorkflowExecution(WorkflowExecutionResult result, ExecutionContext executionContext,
+    public void finishWorkflowExecution(WorkflowExecutionResult result, StepExecutionContext executionContext,
                                         WorkflowExecutionItem item);
-    public void beginWorkflowItem(int step, ExecutionItem node);
-    public void finishWorkflowItem(int step, ExecutionItem node);
+    public void beginWorkflowItem(int step, StepExecutionItem item);
+    public void beginWorkflowItemErrorHandler(int step, StepExecutionItem item);
+    public void finishWorkflowItem(int step, StepExecutionItem item, StepExecutionResult result);
+    public void finishWorkflowItemErrorHandler(int step, StepExecutionItem item, StepExecutionResult success);
+
+    /**
+     * Called when execution begins for a step
+     * @param executor executor
+     * @param context context
+     * @param item step
+     */
+    public void beginStepExecution(StepExecutor executor,StepExecutionContext context, StepExecutionItem item);
+
+    /**
+     * Called when execution finishes for a step
+     * @param executor executor
+     * @param result result
+     * @param context context
+     * @param item step
+     */
+    public void finishStepExecution(StepExecutor executor, StatusResult result, StepExecutionContext context, StepExecutionItem item);
+
+    /**
+     * Begin execution of a node step
+     * @param context context
+     * @param item step
+     * @param node node
+     */
+    public void beginExecuteNodeStep(ExecutionContext context, NodeStepExecutionItem item, INodeEntry node);
+
+    /**
+     * Finish execution of a node step
+     * @param result result
+     * @param context context
+     * @param item step
+     * @param node node
+     */
+    public void finishExecuteNodeStep(NodeStepResult result, ExecutionContext context, StepExecutionItem item,
+            INodeEntry node);
 }

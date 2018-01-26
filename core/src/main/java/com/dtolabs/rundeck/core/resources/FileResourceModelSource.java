@@ -26,6 +26,8 @@ package com.dtolabs.rundeck.core.resources;
 import com.dtolabs.rundeck.core.common.*;
 import com.dtolabs.rundeck.core.plugins.configuration.*;
 import com.dtolabs.rundeck.core.resources.format.*;
+import com.dtolabs.rundeck.plugins.util.DescriptionBuilder;
+import com.dtolabs.rundeck.plugins.util.PropertyBuilder;
 import com.dtolabs.shared.resources.ResourceXMLGenerator;
 
 import java.io.File;
@@ -52,49 +54,53 @@ public class FileResourceModelSource implements ResourceModelSource, Configurabl
         nodeSet = new NodeSetImpl();
     }
 
+    static Description createDescription(final List<String> formats) {
+        return DescriptionBuilder.builder()
+            .name("file")
+            .title("File")
+            .description("Reads a file containing node definitions in a supported format")
+            .property(PropertyBuilder.builder()
+                          .freeSelect(Configuration.FORMAT)
+                          .title("Format")
+                          .description("Format of the file")
+                          .values(formats)
+                          .build()
+            )
+            .property(PropertyBuilder.builder()
+                          .string(Configuration.FILE)
+                          .title("File Path")
+                          .description("Path of the file")
+                          .required(true)
+                          .build()
+            )
+            .property(PropertyBuilder.builder()
+                          .booleanType(Configuration.GENERATE_FILE_AUTOMATICALLY)
+                          .title("Generate")
+                          .description("Automatically generate the file if it is missing?\n\nAlso creates missing directories.")
+                          .required(true)
+                          .defaultValue("false")
+                          .build()
+            )
+            .property(PropertyBuilder.builder()
+                          .booleanType(Configuration.INCLUDE_SERVER_NODE)
+                          .title("Include Server Node")
+                          .description("Automatically include the server node in the generated file?")
+                          .required(true)
+                          .defaultValue("false")
+                          .build()
+            )
+            .property(PropertyBuilder.builder()
+                          .booleanType(Configuration.REQUIRE_FILE_EXISTS)
+                          .title("Require File Exists")
+                          .description("Require that the file exists")
+                          .required(true)
+                          .defaultValue("false")
+                          .build()
+            )
 
-    static ArrayList<Property> fileResourceProperties = new ArrayList<Property>();
-
-    static {
-        fileResourceProperties.add(PropertyUtil.string(Configuration.FILE, "File Path", "Path of the file", true,
-            null));
-        fileResourceProperties.add(PropertyUtil.bool(Configuration.GENERATE_FILE_AUTOMATICALLY, "Generate",
-            "Automatically generate the file if it is missing?", true, "false"));
-        fileResourceProperties.add(PropertyUtil.bool(Configuration.INCLUDE_SERVER_NODE, "Include Server Node",
-            "Automatically include the server node in the generated file?", true, "false"));
-        fileResourceProperties.add(PropertyUtil.bool(Configuration.REQUIRE_FILE_EXISTS, "Require File Exists",
-            "Require that the file exists", true, "false"));
-
+            .build();
     }
 
-    static final class Description extends AbstractBaseDescription {
-        final List<Property> properties;
-
-        Description(List<String> formats) {
-            final ArrayList<Property> properties1 = new ArrayList<Property>(fileResourceProperties);
-            properties1.add(PropertyUtil.freeSelect(Configuration.FORMAT, "Format", "Format of the file",
-                false, null, formats));
-            properties = Collections.unmodifiableList(properties1);
-
-        }
-
-        public String getName() {
-            return "file";
-        }
-
-        public String getTitle() {
-            return "File";
-        }
-
-        public String getDescription() {
-            return "Reads a file containing node definitions in a supported format";
-        }
-
-        public List<Property> getProperties() {
-
-            return properties;
-        }
-    }
 
     public static class Configuration {
         public static final String GENERATE_FILE_AUTOMATICALLY = "generateFileAutomatically";
@@ -240,6 +246,8 @@ public class FileResourceModelSource implements ResourceModelSource, Configurabl
 
     /**
      * Configure the Source
+     * @param configuration configuration
+     * @throws com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException on config error
      */
     public void configure(final Configuration configuration) throws ConfigurationException {
         this.configuration = new Configuration(configuration);
@@ -251,17 +259,18 @@ public class FileResourceModelSource implements ResourceModelSource, Configurabl
     }
 
     /**
-     * Returns a {@link Nodes} object conatining the nodes config data.
+     * Returns a {@link INodeSet} object conatining the nodes config data.
      *
      * @param nodesFile the source file
-     * @param format
+     * @param format nodes format
      *
-     * @return an instance of {@link Nodes}
+     * @return an instance of {@link INodeSet}
+     * @throws ResourceModelSourceException on error
      */
     public synchronized INodeSet getNodes(final File nodesFile, final String format) throws
         ResourceModelSourceException {
         final Long modtime = nodesFile.lastModified();
-        if (0 == nodeSet.getNodes().size() || !modtime.equals(lastModTime)) {
+        if (0 == nodeSet.getNodes().size() || (modtime > lastModTime)) {
             nodeSet = new NodeSetImpl();
             loadNodes(nodesFile, format);
             lastModTime = modtime;
@@ -289,6 +298,14 @@ public class FileResourceModelSource implements ResourceModelSource, Configurabl
         if (configuration.includeServerNode) {
             NodeSetImpl nodes = new NodeSetImpl();
             nodes.putNode(node);
+
+            if(!resfile.getParentFile().exists()) {
+                if(!resfile.getParentFile().mkdirs()) {
+                    throw new ResourceModelSourceException(
+                            "Parent dir for resource file does not exists, and could not be created: " + resfile
+                    );
+                }
+            }
 
             try {
                 final FileOutputStream stream = new FileOutputStream(resfile);
@@ -331,8 +348,10 @@ public class FileResourceModelSource implements ResourceModelSource, Configurabl
      * Create a NodeFileParser given the project and the source file, using the predetermined format
      *
      * @param file the nodes resource file
+     * @param format the file format
      *
      * @return a new parser based on the determined format
+     * @throws ResourceModelSourceException if the format is not supported
      */
     protected ResourceFormatParser createParser(final File file, final String format) throws
         ResourceModelSourceException {
@@ -348,7 +367,14 @@ public class FileResourceModelSource implements ResourceModelSource, Configurabl
     }
 
     /**
+     *
      * Utility method to directly parse the nodes from a file
+     * @param file file
+     * @param framework fwk
+     * @param project project name
+     * @return nodes
+     * @throws ResourceModelSourceException if an error occurs
+     * @throws ConfigurationException if a configuration error occurs
      */
     public static INodeSet parseFile(final String file, final Framework framework, final String project) throws
         ResourceModelSourceException, ConfigurationException {
@@ -357,6 +383,12 @@ public class FileResourceModelSource implements ResourceModelSource, Configurabl
 
     /**
      * Utility method to directly parse the nodes from a file
+     * @param file file
+     * @param framework fwk
+     * @param project project name
+     * @return nodes
+     * @throws ResourceModelSourceException if an error occurs
+     * @throws ConfigurationException if a configuration error occurs
      */
     public static INodeSet parseFile(final File file, final Framework framework, final String project) throws
         ResourceModelSourceException,
@@ -375,6 +407,13 @@ public class FileResourceModelSource implements ResourceModelSource, Configurabl
 
     /**
      * Utility method to directly parse the nodes from a file
+     * @param file file
+     * @param format specified format
+     * @param framework fwk
+     * @param project project name
+     * @return nodes
+     * @throws ResourceModelSourceException if an error occurs
+     * @throws ConfigurationException if a configuration error occurs
      */
     public static INodeSet parseFile(final File file, final String format, final Framework framework,
                                      final String project) throws

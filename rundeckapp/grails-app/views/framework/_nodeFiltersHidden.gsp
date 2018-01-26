@@ -20,19 +20,9 @@
     Created: Apr 14, 2010 4:07:58 PM
     $Id$
  --%>
-<g:set var="NODE_FILTERS" value="${['','Name','Tags','OsName','OsFamily','OsArch','OsVersion']}"/>
-<g:set var="NODE_FILTER_MAP" value="${['':'Hostname','OsName':'OS Name','OsFamily':'OS Family','OsArch':'OS Architecture','OsVersion':'OS Version']}"/>
 <g:hiddenField name="formInput" value="true"/>
 
+<input type="hidden" name="filter" value="${enc(attr:query?.filter)}"  class="hiddenNodeFilter" data-bind="value: filter"/>
+<input type="hidden" name="filterName" value="${enc(attr:filterName?:'')}"  class="hiddenNodeFilterName" data-bind="value: filterName"/>
 
-<g:each var="key" in="${NODE_FILTERS}">
-    <g:if test="${query?.('nodeInclude'+key)}">
-        <input type='hidden' name="nodeInclude${key}"
-            value="${query?.('nodeInclude'+key)?.encodeAsHTML()}" />
-    </g:if>
-    <g:if test="${query?.('nodeExclude'+key)}">
-            <input type='hidden' name="nodeExclude${key}"
-                value="${query?.('nodeExclude'+key)?.encodeAsHTML()}" />
-    </g:if>
-</g:each>
-<input type="hidden" name="nodeExcludePrecedence" value="${query?.nodeExcludePrecedence}" />
+<input type="hidden" name="nodeExcludePrecedence" value="${enc(attr:query?.nodeExcludePrecedence)}" />

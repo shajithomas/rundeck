@@ -16,35 +16,30 @@
 
 package com.dtolabs.rundeck.core.cli.project;
 
-import com.dtolabs.rundeck.core.Constants;
 import com.dtolabs.rundeck.core.cli.Action;
 import com.dtolabs.rundeck.core.cli.CLIToolLogger;
-import com.dtolabs.rundeck.core.common.Framework;
-import com.dtolabs.rundeck.core.common.FrameworkProject;
 import com.dtolabs.rundeck.core.common.FrameworkResource;
-import com.dtolabs.rundeck.core.common.context.FrameworkProjectContext;
-import com.dtolabs.rundeck.core.common.context.IDepotContext;
+import com.dtolabs.rundeck.core.dispatcher.CentralDispatcher;
+import com.dtolabs.rundeck.core.dispatcher.CentralDispatcherException;
+import com.dtolabs.rundeck.core.utils.IPropertyLookup;
 import org.apache.commons.cli.CommandLine;
 
-import java.io.File;
+import java.util.List;
 
 /**
  * Base class for implementing project setup actions
  */
 public class BaseAction implements Action {
-    final File FWK_PROP_FILE ;
 
     final protected CLIToolLogger main;
-    final protected Framework framework;
     private boolean verbose=false;
 
-    protected IDepotContext project;
+    protected String project;
+    private CentralDispatcher centralDispatcher;
+    final protected IPropertyLookup frameworkProperties;
 
-    public BaseAction(final CLIToolLogger main, final Framework framework, final CommandLine cli) {
-        this(main, framework, parseBaseActionArgs(cli));
-    }
 
-    public BaseAction(final CLIToolLogger main, final Framework framework, final BaseActionArgs args) {
+    public BaseAction(final CLIToolLogger main, final IPropertyLookup frameworkProperties, final BaseActionArgs args, final CentralDispatcher dispatcher) {
         if (null == main) {
             throw new NullPointerException("main parameter was null");
         }
@@ -53,10 +48,9 @@ public class BaseAction implements Action {
 
         }
         this.main = main;
-        this.framework = framework;
-        FWK_PROP_FILE = new File(Constants.getFrameworkConfigDir(framework.getBaseDir().getAbsolutePath()),
-                                 "framework.properties");
-        initArgs(args);
+        this.frameworkProperties = frameworkProperties;
+        this.centralDispatcher=dispatcher;
+        initArgs(args, true);
     }
 
     public boolean isVerbose() {
@@ -98,65 +92,61 @@ public class BaseAction implements Action {
 
     }
 
+    public CentralDispatcher getCentralDispatcher() {
+        return centralDispatcher;
+    }
+
+    public void setCentralDispatcher(final CentralDispatcher centralDispatcher) {
+        this.centralDispatcher = centralDispatcher;
+    }
+
 
     /**
      * Arguments for the BaseAction.
      */
     public static interface BaseActionArgs{
         /**
-         * Name of project to use, required.
-         * @return
+         * @return Name of project to use
+         *
          */
         public String getProject();
 
         /**
-         * Return true to turn verbose logging on.
-         * @return
+         * @return true to turn verbose logging on.
          */
         public boolean isVerbose();
     }
+    protected String getSingleProjectName() throws CentralDispatcherException {
+        List<String> strings = getCentralDispatcher().listProjectNames();
+        if(strings.size()==1) {
+            return strings.get(0);
+        }
+        return null;
+    }
 
-    private void initArgs(BaseActionArgs args) {
+
+    private void initArgs(BaseActionArgs args, final boolean allowDefaultProject) {
         if (null != args.getProject()) {
-            project = FrameworkProjectContext.create(args.getProject());
-        } else if (null == args.getProject() &&
-                framework.getFrameworkProjectMgr().listFrameworkProjects().size() == 1) {
-            final FrameworkProject d = (FrameworkProject) framework.getFrameworkProjectMgr().listFrameworkProjects().iterator().next();
-            project = FrameworkProjectContext.create(d.getName());
-            main.log("defaulting to project: " + d.getName());
-        } else {
-            throw new InvalidArgumentsException("-p option not specified");
+            project = args.getProject();
         }
         verbose = args.isVerbose();
     }
 
-    /**
-     * Check if software was installed and setup process was run
-     */
-    protected void validateInstall() {
-        final File adHome = framework.getHomeDir();
-        if (null==adHome || !adHome.exists()) {
-            throw new ProjectToolException(
-                "rdeck home now found: " + (null == adHome ? "(null)" : adHome.getAbsolutePath()));
-        }
-        final File baseDir = framework.getBaseDir();
-        if (null == baseDir || !baseDir.exists()) {
-            throw new ProjectToolException(
-                "RDECK_BASE dir not found: " + (null == baseDir ? "(null)" : baseDir.getAbsolutePath()));
-        }
-        if (!FWK_PROP_FILE.exists()) {
-            throw new ProjectToolException("framework configuration not found: " + FWK_PROP_FILE.getAbsolutePath());
+    void validate(){
+        if(null==project){
+            throw new InvalidArgumentsException("-p option not specified");
         }
     }
 
+    /**
 
     /**
      * Execute the action.  Currently checks if installation is valid.
      *
-     * @throws Throwable
+     * @throws Throwable any throwable
      */
     public void exec() throws Throwable {
-        validateInstall();
+        validate();
     }
 
 

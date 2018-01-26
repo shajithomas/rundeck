@@ -6,12 +6,15 @@ errorMsg() {
    echo "$*" 1>&2
 }
 
-DIR=$(cd `dirname $0` && pwd)
+SRC_DIR=$(cd `dirname $0` && pwd)
+DIR=${TMP_DIR:-$SRC_DIR}
+RDECK_ETC=${RDECK_ETC:-$RDECK_BASE/etc}
+RDECK_URL=$(grep framework.server.url $RDECK_ETC/framework.properties  | cut -d' ' -f3) 
 
 # accept url argument on commandline, if '-' use default
 url="$1"
 if [ "-" == "$1" ] ; then
-    url='http://localhost:4440'
+    url=${RDECK_URL:-http://localhost:4440}
 fi
 apiurl="${url}/api"
 if [ -z "$RDAUTH" ] ; then
@@ -38,7 +41,7 @@ if [ -z "$RDAUTH" ] ; then
     
     grep 'j_security_check' -q $DIR/curl.out 
     if [ 0 == $? ] ; then
-        errorMsg "login was not successful"
+        errorMsg "login was not successful: ${loginurl}"
         exit 2
     fi
 fi

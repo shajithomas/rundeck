@@ -23,161 +23,307 @@
 */
 package com.dtolabs.rundeck.core.execution;
 
+import com.dtolabs.rundeck.core.authorization.AuthContext;
 import com.dtolabs.rundeck.core.common.Framework;
 import com.dtolabs.rundeck.core.common.INodeEntry;
+import com.dtolabs.rundeck.core.common.INodeSet;
+import com.dtolabs.rundeck.core.common.NodeSetImpl;
 import com.dtolabs.rundeck.core.common.NodesSelector;
+import com.dtolabs.rundeck.core.common.OrchestratorConfig;
 import com.dtolabs.rundeck.core.common.SelectorUtils;
+import com.dtolabs.rundeck.core.dispatcher.DataContextUtils;
+import com.dtolabs.rundeck.core.execution.workflow.FlowControl;
+import com.dtolabs.rundeck.core.execution.workflow.StepExecutionContext;
+import com.dtolabs.rundeck.core.execution.workflow.steps.node.NodeExecutionContext;
+import com.dtolabs.rundeck.core.jobs.JobService;
+import com.dtolabs.rundeck.core.storage.StorageTree;
+import com.dtolabs.rundeck.plugins.orchestrator.OrchestratorPlugin;
 
 import java.io.File;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 
 /**
  * ExecutionContextImpl is ...
  *
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  */
-public class ExecutionContextImpl implements ExecutionContext {
+public class ExecutionContextImpl implements ExecutionContext, StepExecutionContext, NodeExecutionContext {
     private String frameworkProject;
     private String user;
     private NodesSelector nodeSet;
+    private INodeSet nodes;
     private int threadCount;
     private boolean keepgoing;
-    private String[] args;
     private int loglevel;
     private Map<String, Map<String, String>> dataContext;
     private Map<String, Map<String, String>> privateDataContext;
+    private Map<String, Map<String, Map<String, String>>> nodeDataContext;
     private ExecutionListener executionListener;
     private Framework framework;
+    private AuthContext authContext;
     private File nodesFile;
     private String nodeRankAttribute;
-    private boolean nodeRankOrderAscending=true;
+    private boolean nodeRankOrderAscending = true;
+    private int stepNumber = 1;
+    private List<Integer> stepContext;
+    private StorageTree storageTree;
+    private JobService jobService;
+    private FlowControl flowControl;
 
-    private ExecutionContextImpl(final Builder builder) {
-        this.frameworkProject = builder.frameworkProject;
-        this.user = builder.user;
-        this.nodeSet = builder.nodeSet;
-        this.args = builder.args;
-        this.loglevel = builder.loglevel;
-        this.dataContext = builder.dataContext;
-        this.privateDataContext = builder.privateDataContext;
-        this.executionListener = builder.executionListener;
-        this.framework = builder.framework;
-        this.nodesFile = builder.nodesFile;
-        this.threadCount = builder.threadCount;
-        this.keepgoing = builder.keepgoing;
-        this.nodeRankAttribute = builder.nodeRankAttribute;
-        this.nodeRankOrderAscending = builder.nodeRankOrderAscending;
+    private OrchestratorConfig orchestrator;
+    private ExecutionContextImpl() {
+        stepContext = new ArrayList<Integer>();
+        nodes = new NodeSetImpl();
+        nodeDataContext = new HashMap<String, Map<String, Map<String, String>>>();
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+    public static Builder builder(ExecutionContext context) {
+        return new Builder(context);
+    }
+    public static Builder builder(StepExecutionContext context) {
+        return new Builder(context);
+    }
+
+    @Override
+    public Map<String, Map<String, Map<String, String>>> getNodeDataContext() {
+        return nodeDataContext;
+    }
+
+    public AuthContext getAuthContext() {
+        return authContext;
+    }
+
+    public void setAuthContext(AuthContext authContext) {
+        this.authContext = authContext;
+    }
+
+    public StorageTree getStorageTree() {
+        return storageTree;
+    }
+
+    @Override
+    public FlowControl getFlowControl() {
+        return flowControl;
     }
 
     public static class Builder {
-        private String frameworkProject;
-        private String user;
-        private NodesSelector nodeSet;
-        private String[] args;
-        private int loglevel;
-        private Map<String, Map<String, String>> dataContext;
-        private Map<String, Map<String, String>> privateDataContext;
-        private ExecutionListener executionListener;
-        private Framework framework;
-        private File nodesFile;
-        private int threadCount;
-        private boolean keepgoing;
-        private String nodeRankAttribute;
-        private boolean nodeRankOrderAscending=true;
+        private ExecutionContextImpl ctx;
+
 
         public Builder() {
+            ctx = new ExecutionContextImpl();
         }
 
         public Builder(final ExecutionContext original) {
-            this.frameworkProject = original.getFrameworkProject();
-            this.user = original.getUser();
-            this.nodeSet = original.getNodeSelector();
-            this.args = original.getArgs();
-            this.loglevel = original.getLoglevel();
-            this.dataContext = original.getDataContext();
-            this.privateDataContext = original.getPrivateDataContext();
-            this.executionListener = original.getExecutionListener();
-            this.framework = original.getFramework();
-            this.nodesFile = original.getNodesFile();
-            this.threadCount = original.getThreadCount();
-            this.keepgoing = original.isKeepgoing();
-            this.nodeRankAttribute = original.getNodeRankAttribute();
-            this.nodeRankOrderAscending = original.isNodeRankOrderAscending();
+            this();
+            if(null!=original){
+                ctx.frameworkProject = original.getFrameworkProject();
+                ctx.user = original.getUser();
+                ctx.nodeSet = original.getNodeSelector();
+                ctx.nodes = original.getNodes();
+                ctx.loglevel = original.getLoglevel();
+                ctx.dataContext = original.getDataContext();
+                ctx.privateDataContext = original.getPrivateDataContext();
+                ctx.executionListener = original.getExecutionListener();
+                ctx.framework = original.getFramework();
+                ctx.authContext = original.getAuthContext();
+                ctx.nodesFile = original.getNodesFile();
+                ctx.threadCount = original.getThreadCount();
+                ctx.keepgoing = original.isKeepgoing();
+                ctx.nodeRankAttribute = original.getNodeRankAttribute();
+                ctx.nodeRankOrderAscending = original.isNodeRankOrderAscending();
+                ctx.storageTree = original.getStorageTree();
+                ctx.jobService = original.getJobService();
+                ctx.orchestrator = original.getOrchestrator();
+                if(original instanceof NodeExecutionContext){
+                    NodeExecutionContext original1 = (NodeExecutionContext) original;
+                    ctx.nodeDataContext.putAll(original1.getNodeDataContext());
+                }
+            }
+        }
 
+        public Builder storageTree(StorageTree storageTree) {
+            ctx.storageTree=storageTree;
+            return this;
+        }
+
+        public Builder jobService(JobService jobService) {
+            ctx.jobService=jobService;
+            return this;
+        }
+
+        public Builder(final StepExecutionContext original) {
+            this((ExecutionContext) original);
+            if (null != original) {
+                ctx.stepNumber = original.getStepNumber();
+                ctx.stepContext = original.getStepContext();
+                ctx.flowControl = original.getFlowControl();
+            }
+        }
+
+        public Builder flowControl(FlowControl flowControl) {
+            ctx.flowControl = flowControl;
+            return this;
         }
 
         public Builder frameworkProject(String frameworkProject) {
-            this.frameworkProject = frameworkProject;
+            ctx.frameworkProject = frameworkProject;
             return this;
         }
 
         public Builder user(String user) {
-            this.user = user;
+            ctx.user = user;
             return this;
         }
 
         public Builder nodeSelector(NodesSelector nodeSet) {
-            this.nodeSet = nodeSet;
+            ctx.nodeSet = nodeSet;
             return this;
         }
 
-        public Builder args(String[] args) {
-            this.args = args;
+        public Builder nodes(INodeSet nodeSet) {
+            ctx.nodes = nodeSet;
             return this;
+        }
+
+        /**
+         * Set node set/selector to single node context, and optionally merge node-specific context data
+         * @param node node
+         * @param setContextData context
+         * @return builder
+         */
+        public Builder singleNodeContext(INodeEntry node, boolean setContextData) {
+            nodeSelector(SelectorUtils.singleNode(node.getNodename()));
+            nodes(NodeSetImpl.singleNodeSet(node));
+            if(setContextData) {
+                //merge in any node-specific data context
+                nodeContextData(node);
+
+                if (null != ctx.nodeDataContext && null != ctx.nodeDataContext.get(node.getNodename())) {
+                    ctx.dataContext = DataContextUtils.merge(ctx.dataContext,
+                                                             ctx.nodeDataContext.get(node.getNodename()));
+                }
+            }
+            return this;
+        }
+
+        public Builder nodeContextData(INodeEntry node) {
+            ctx.dataContext = DataContextUtils.addContext("node", DataContextUtils.nodeData(node), ctx.dataContext);
+            return this;
+        }
+
+        /**
+         * Add/replace a context data set
+         * @param key key
+         * @param data data
+         * @return builder
+         */
+        public Builder setContext(final String key, final Map<String,String> data) {
+            return dataContext(DataContextUtils.addContext(key, data, ctx.dataContext));
+        }
+
+        /**
+         * merge a context data set
+         * @param key key
+         * @param data data
+         * @return builder
+         */
+        public Builder mergeContext(final String key, final Map<String,String> data) {
+            HashMap<String, Map<String, String>> tomerge = new HashMap<String, Map<String, String>>();
+            tomerge.put(key, data);
+            return dataContext(DataContextUtils.merge(ctx.dataContext, tomerge));
         }
 
         public Builder loglevel(int loglevel) {
-            this.loglevel = loglevel;
+            ctx.loglevel = loglevel;
             return this;
         }
 
         public Builder dataContext(Map<String, Map<String, String>> dataContext) {
-            this.dataContext = dataContext;
+            ctx.dataContext = dataContext;
             return this;
         }
 
         public Builder privateDataContext(Map<String, Map<String, String>> privateDataContext) {
-            this.privateDataContext = privateDataContext;
+            ctx.privateDataContext = privateDataContext;
             return this;
         }
 
         public Builder executionListener(ExecutionListener executionListener) {
-            this.executionListener = executionListener;
+            ctx.executionListener = executionListener;
             return this;
         }
 
         public Builder framework(Framework framework) {
-            this.framework = framework;
+            ctx.framework = framework;
+            return this;
+        }
+
+        public Builder authContext(AuthContext authContext) {
+            ctx.authContext = authContext;
             return this;
         }
 
         public Builder nodesFile(File nodesFile) {
-            this.nodesFile = nodesFile;
+            ctx.nodesFile = nodesFile;
             return this;
         }
 
         public Builder threadCount(int threadCount) {
-            this.threadCount = threadCount;
+            ctx.threadCount = threadCount;
             return this;
         }
 
         public Builder keepgoing(boolean keepgoing) {
-            this.keepgoing = keepgoing;
+            ctx.keepgoing = keepgoing;
             return this;
         }
 
         public Builder nodeRankAttribute(final String nodeRankAttribute) {
-            this.nodeRankAttribute = nodeRankAttribute;
+            ctx.nodeRankAttribute = nodeRankAttribute;
             return this;
         }
 
         public Builder nodeRankOrderAscending(boolean nodeRankOrderAscending) {
-            this.nodeRankOrderAscending = nodeRankOrderAscending;
+            ctx.nodeRankOrderAscending = nodeRankOrderAscending;
+            return this;
+        }
+
+        public Builder stepNumber(int number) {
+            ctx.stepNumber = number;
+            return this;
+        }
+
+        public Builder stepContext(List<Integer> stepContext) {
+            ctx.stepContext = stepContext;
+            return this;
+        }
+        
+        public Builder orchestrator(OrchestratorConfig orchestrator) {
+            ctx.orchestrator = orchestrator;
+            return this;
+        }
+        
+        public Builder pushContextStep(final int step) {
+            ctx.stepContext.add(ctx.stepNumber);
+            ctx.stepNumber = step;
+            return this;
+        }
+
+        public Builder nodeDataContext(final String nodeName, final Map<String,Map<String,String>> dataContext) {
+            ctx.nodeDataContext.put(nodeName, dataContext);
             return this;
         }
 
         public ExecutionContextImpl build() {
-            return new ExecutionContextImpl(this);
+            return ctx;
         }
     }
 
@@ -193,8 +339,8 @@ public class ExecutionContextImpl implements ExecutionContext {
         return nodeSet;
     }
 
-    public String[] getArgs() {
-        return null != args ? args.clone() : null;
+    public INodeSet getNodes() {
+        return nodes;
     }
 
     public int getLoglevel() {
@@ -235,5 +381,26 @@ public class ExecutionContextImpl implements ExecutionContext {
 
     public boolean isNodeRankOrderAscending() {
         return nodeRankOrderAscending;
+    }
+
+    @Override
+    public int getStepNumber() {
+        return stepNumber;
+    }
+
+    @Override
+    public List<Integer> getStepContext() {
+        return stepContext;
+    }
+
+    @Override
+    public JobService getJobService() {
+        return jobService;
+    }
+
+
+    @Override
+    public OrchestratorConfig getOrchestrator() {
+    	return orchestrator;
     }
 }

@@ -24,10 +24,10 @@
 package com.dtolabs.client.services;
 
 import com.dtolabs.rundeck.core.Constants;
-import com.dtolabs.rundeck.core.cli.CLIUtils;
 import com.dtolabs.rundeck.core.dispatcher.IDispatchedScript;
 import com.dtolabs.rundeck.core.execution.ExecutionUtils;
 import com.dtolabs.rundeck.core.utils.NodeSet;
+import com.dtolabs.rundeck.core.utils.OptsUtil;
 import org.dom4j.Document;
 import org.dom4j.DocumentFactory;
 import org.dom4j.Element;
@@ -64,7 +64,7 @@ public class JobDefinitionSerializer {
 
         addScriptDispatch(dispatchdef, job);
 
-        addNodefilters(job, dispatchdef.getNodeSet());
+        addNodefilters(job, dispatchdef.getNodeThreadcount(), dispatchdef.isKeepgoing(), dispatchdef.getNodeExcludePrecedence(), dispatchdef.getNodeFilter());
 
         return doc;
     }
@@ -109,7 +109,7 @@ public class JobDefinitionSerializer {
             }
             if (null != dispatchdef.getArgs() && dispatchdef.getArgs().length > 0) {
                 final Element argstring = cmd.addElement("scriptargs");
-                argstring.addText(CLIUtils.generateArgline(null, dispatchdef.getArgs()));
+                argstring.addText(OptsUtil.join(dispatchdef.getArgs()));
             }
         } else if (null != dispatchdef.getServerScriptFilePath()) {
             //server-local script filepath
@@ -117,12 +117,12 @@ public class JobDefinitionSerializer {
             filepath.addText(dispatchdef.getServerScriptFilePath());
             if (null != dispatchdef.getArgs() && dispatchdef.getArgs().length>0) {
                 final Element argstring = cmd.addElement("scriptargs");
-                argstring.addText(CLIUtils.generateArgline(null, dispatchdef.getArgs()));
+                argstring.addText(OptsUtil.join(dispatchdef.getArgs()));
             }
         } else if (null != dispatchdef.getArgs() && dispatchdef.getArgs().length > 0) {
             //shell command
             final Element exec = cmd.addElement("exec");
-            exec.addText(CLIUtils.generateArgline(null, dispatchdef.getArgs()));
+            exec.addText(OptsUtil.join(dispatchdef.getArgs()));
         } else {
             throw new IllegalArgumentException("Dispatched script did not specify a command, script or filepath");
         }
@@ -135,37 +135,17 @@ public class JobDefinitionSerializer {
      * Add nodefilter and dispatch element to job element for the nodeset, if not null
      *
      * @param job     job element
-     * @param nodeset NodeSet, or null
+     * @param threadCount thread count
+     * @param excludePrecedence exclude precedence set
+     * @param nodeFilter node filter string
      */
-    private static void addNodefilters(final Element job, final NodeSet nodeset) {
-        final int threadcount = (null != nodeset) && (nodeset.getThreadCount() > 1) ? nodeset.getThreadCount() : 1;
-        final boolean keepgoing = null != nodeset && nodeset.isKeepgoing();
-
-        if (null != nodeset && (null != nodeset.getInclude() && !nodeset.getInclude().isBlank()
-                                || null != nodeset.getExclude() && !nodeset.getExclude().isBlank())) {
-            final Element filters = job.addElement("nodefilters");
-            filters.addAttribute("excludeprecedence", Boolean.toString(nodeset.getExclude().isDominant() || !nodeset
-                .getInclude().isDominant()));
-            if (!nodeset.getExclude().isBlank()) {
-                final NodeSet.Exclude exclude = nodeset.getExclude();
-                final Element exc = filters.addElement("exclude");
-                for (final NodeSet.FILTER_ENUM fkey : NodeSet.FILTER_ENUM.values()) {
-                    final String s = fkey.value(exclude);
-                    if (null != s && !"".equals(s)) {
-                        exc.addElement(fkey.getName()).addText(s);
-                    }
-                }
-            }
-            if (!nodeset.getInclude().isBlank()) {
-                final NodeSet.Include include = nodeset.getInclude();
-                final Element inc = filters.addElement("include");
-                for (final NodeSet.FILTER_ENUM fkey : NodeSet.FILTER_ENUM.values()) {
-                    final String s = fkey.value(include);
-                    if (null != s && !"".equals(s)) {
-                        inc.addElement(fkey.getName()).addText(s);
-                    }
-                }
-            }
+    private static void addNodefilters(final Element job, int threadCount, boolean keepgoing,
+            boolean excludePrecedence, String nodeFilter) {
+        final int threadcount = (threadCount > 1) ? threadCount : 1;
+        if (null != nodeFilter) {
+            final Element filters = job.addElement("nodefilters");;
+            filters.addElement("filter").addText(nodeFilter);
+            filters.addAttribute("excludeprecedence", Boolean.toString(excludePrecedence));
         }
         final Element dispatch = job.addElement("dispatch");
         dispatch.addElement("threadcount").addText(Integer.toString(threadcount));

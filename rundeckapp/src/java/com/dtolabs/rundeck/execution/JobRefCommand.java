@@ -23,7 +23,7 @@
 */
 package com.dtolabs.rundeck.execution;
 
-import java.util.*;
+import com.dtolabs.rundeck.core.execution.workflow.steps.NodeDispatchStepExecutor;
 
 /**
  * JobRefCommand is ...
@@ -32,6 +32,10 @@ import java.util.*;
  */
 public abstract class JobRefCommand implements JobExecutionItem{
     public String getType() {
-        return COMMAND_TYPE;
+        return isNodeStep() ? NodeDispatchStepExecutor.STEP_EXECUTION_TYPE : JobExecutionItem.STEP_EXECUTION_TYPE;
+    }
+
+    public String getNodeStepType() {
+        return STEP_EXECUTION_TYPE;
     }
 }

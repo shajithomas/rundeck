@@ -23,22 +23,55 @@
 */
 package com.dtolabs.rundeck.core.execution.service;
 
+import com.dtolabs.rundeck.core.common.INodeEntry;
+import com.dtolabs.rundeck.core.execution.workflow.steps.FailureReason;
+import com.dtolabs.rundeck.core.execution.workflow.steps.node.NodeStepResultImpl;
+
+
 /**
  * NodeExecutorResultImpl simple implementation of {@link NodeExecutorResult}
  *
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  */
-public class NodeExecutorResultImpl implements NodeExecutorResult {
+public class NodeExecutorResultImpl extends NodeStepResultImpl implements NodeExecutorResult {
+    public static final String FAILURE_DATA_RESULT_CODE = "resultCode";
     private int resultCode;
-    private boolean success;
 
-    public NodeExecutorResultImpl(final int resultCode, final boolean success) {
-        this.resultCode = resultCode;
-        this.success = success;
+    public static NodeExecutorResultImpl createSuccess(INodeEntry node) {
+        return new NodeExecutorResultImpl(node, 0);
     }
 
-    public boolean isSuccess() {
-        return success;
+    private NodeExecutorResultImpl(INodeEntry node, int resultCode) {
+        super(node);
+        this.resultCode = resultCode;
+        getFailureData().put(FAILURE_DATA_RESULT_CODE, resultCode);
+    }
+
+    public static NodeExecutorResultImpl createFailure(FailureReason reason, String message,
+                                                       Exception exception, INodeEntry node, int resultCode) {
+
+        return new NodeExecutorResultImpl(exception, node, resultCode, reason, message);
+    }
+
+    public static NodeExecutorResultImpl createFailure(FailureReason reason,
+                                                       String message,
+                                                       INodeEntry node,
+                                                       int resultCode) {
+
+        return new NodeExecutorResultImpl(null, node, resultCode, reason, message);
+    }
+
+    public static NodeExecutorResultImpl createFailure(FailureReason reason, String message, INodeEntry node) {
+
+        return new NodeExecutorResultImpl(null, node, -1, reason, message);
+    }
+
+    private NodeExecutorResultImpl(Exception exception,
+                                   INodeEntry node,
+                                   int resultCode, final FailureReason reason, final String failureMessage) {
+        super(exception, reason, failureMessage, node);
+        this.resultCode = resultCode;
+        getFailureData().put(FAILURE_DATA_RESULT_CODE, resultCode);
     }
 
     public int getResultCode() {
@@ -46,38 +79,28 @@ public class NodeExecutorResultImpl implements NodeExecutorResult {
     }
 
     @Override
-    public boolean equals(final Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
+    public boolean equals(Object o) {
+        if (this == o) { return true; }
+        if (!(o instanceof NodeExecutorResultImpl)) { return false; }
+        if (!super.equals(o)) { return false; }
 
-        final NodeExecutorResultImpl that = (NodeExecutorResultImpl) o;
+        NodeExecutorResultImpl result = (NodeExecutorResultImpl) o;
 
-        if (resultCode != that.resultCode) {
-            return false;
-        }
-        if (success != that.success) {
-            return false;
-        }
+        if (resultCode != result.resultCode) { return false; }
 
         return true;
     }
 
     @Override
     public int hashCode() {
-        int result = resultCode;
-        result = 31 * result + (success ? 1 : 0);
+        int result = super.hashCode();
+        result = 31 * result + resultCode;
         return result;
     }
 
     @Override
     public String toString() {
-        return "NodeExecutorResultImpl{" +
-               "resultCode=" + resultCode +
-               ", success=" + success +
-               '}';
+        return isSuccess() ? "Succeeded" : getFailureReason() + ": " + getFailureMessage();
     }
+
 }

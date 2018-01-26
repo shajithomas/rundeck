@@ -33,23 +33,64 @@ import java.util.*;
  */
 public class Validator {
     /**
+     * Return a report for a single error item
+     * @param key key
+     * @param message message
+     * @return report
+     */
+    public static Report errorReport(String key, String message) {
+        return buildReport().error(key, message).build();
+    }
+    /**
+     *
+     * @return new Builder for Report
+     */
+    public static ReportBuilder buildReport() {
+        return new ReportBuilder();
+    }
+    /**
+     * Builder for {@link com.dtolabs.rundeck.core.plugins.configuration.Validator.Report}
+     */
+    public static class ReportBuilder {
+        Report report = new Report();
+
+        public ReportBuilder error(String key, String message) {
+            report.errors.put(key, message);
+            return this;
+        }
+
+        public Report build() {
+            return report;
+        }
+    }
+    /**
      * A validation report
      */
     public static class Report {
         private HashMap<String, String> errors = new HashMap<String, String>();
 
         /**
-         * Return a map of errors, keyed by property name.
+         * @return a map of errors, keyed by property name.
          */
         public HashMap<String, String> getErrors() {
             return errors;
         }
 
         /**
-         * Return true if all property values were valid
+         * @return true if all property values were valid
          */
         public boolean isValid() {
             return 0 == errors.size();
+        }
+
+        @Override
+        public String toString() {
+            if(isValid()) {
+                return "Property validation OK.";
+            }else{
+                return "Property validation FAILED. " +
+                        "errors=" + errors ;
+            }
         }
     }
 
@@ -62,10 +103,39 @@ public class Validator {
      * @return the validation report
      */
     public static Report validate(final Properties props, final Description desc) {
-        final Report report = new Report();
         final List<Property> properties = desc.getProperties();
+        return validate(props, properties);
+    }
+
+    /**
+     * Validate a set of properties for a description, and return a report.
+     *
+     * @param props the input properties
+     * @param properties  the properties
+     *
+     * @return the validation report
+     */
+    public static Report validate(final Properties props, final List<Property> properties) {
+        final Report report = new Report();
+        validate(props, report, properties, null);
+        return report;
+    }
+
+
+    /**
+     * Validate, ignoring properties below a scope, if set
+     * @param props input properties
+     * @param report report
+     * @param properties property definitions
+     * @param ignoredScope ignore scope
+     */
+    private static void validate(Properties props, Report report, List<Property> properties, PropertyScope ignoredScope) {
         if(null!=properties){
             for (final Property property : properties) {
+                if (null != ignoredScope && property.getScope() != null
+                        && property.getScope().compareTo(ignoredScope) <= 0) {
+                    continue;
+                }
                 final String key = property.getName();
                 final String value = props.getProperty(key);
                 if (null == value || "".equals(value)) {
@@ -75,7 +145,7 @@ public class Validator {
                     }
                 } else {
                     //try to validate
-                    final Property.Validator validator = property.getValidator();
+                    final PropertyValidator validator = property.getValidator();
                     if (null != validator) {
                         try {
                             if (!validator.isValid(value)) {
@@ -88,12 +158,80 @@ public class Validator {
                 }
             }
         }
+    }
+
+    /**
+     * Validate a set of properties for a description, and return a report.
+     *
+     * @param resolver     property resolver
+     * @param description  description
+     * @param defaultScope default scope for properties
+     *
+     * @return the validation report
+     */
+    public static Report validate(final PropertyResolver resolver, final Description description,
+            PropertyScope defaultScope) {
+        return validate(resolver, description, defaultScope, null);
+    }
+
+    /**
+     * Validate a set of properties for a description, and return a report.
+     *
+     * @param resolver     property resolver
+     * @param description  description
+     * @param defaultScope default scope for properties
+     * @param ignoredScope ignore properties at or below this scope, or null to ignore none
+     * @return the validation report
+     */
+    public static Report validate(final PropertyResolver resolver, final Description description,
+            PropertyScope defaultScope, PropertyScope ignoredScope) {
+        final Report report = new Report();
+        final List<Property> properties = description.getProperties();
+
+        final Map<String, Object> inputConfig = PluginAdapterUtility.mapDescribedProperties(resolver, description,
+                defaultScope);
+        validate(asProperties(inputConfig), report, properties, ignoredScope);
         return report;
+    }
+
+    /**
+     * Validate a set of properties for a description, and return a report.
+     *
+     * @param resolver     property resolver
+     * @param properties   list of properties
+     * @param defaultScope default scope for properties
+     * @param ignoredScope ignore properties at or below this scope, or null to ignore none
+     *
+     * @return the validation report
+     */
+    public static Report validateProperties(
+            final PropertyResolver resolver,
+            final List<Property> properties,
+            PropertyScope defaultScope,
+            PropertyScope ignoredScope
+    )
+    {
+        final Report report = new Report();
+
+        final Map<String, Object> inputConfig = PluginAdapterUtility.mapProperties(
+                resolver, properties, defaultScope
+        );
+        validate(asProperties(inputConfig), report, properties, ignoredScope);
+        return report;
+    }
+
+    private static Properties asProperties(Map<String, Object> inputConfig) {
+        Properties configuration = new Properties();
+        configuration.putAll(inputConfig);
+        return configuration;
     }
 
     /**
      * Converts a set of input configuration keys using the description's configuration to property mapping, or the same
      * input if the description has no mapping
+     * @param input input map
+     * @param desc plugin description
+     * @return mapped values
      */
     public static Map<String, String> mapProperties(final Map<String, String> input, final Description desc) {
         final Map<String, String> mapping = desc.getPropertiesMapping();
@@ -109,7 +247,7 @@ public class Validator {
      * @param mapping map to convert key names
      * @param skip if true, ignore input entries when the key is not present in the mapping
      */
-    private static Map<String, String> performMapping(final Map<String, String> input,
+    public static Map<String, String> performMapping(final Map<String, String> input,
                                                       final Map<String, String> mapping, final boolean skip) {
 
         final Map<String, String> props = new HashMap<String, String>();
@@ -128,9 +266,29 @@ public class Validator {
     /**
      * Reverses a set of properties mapped using the description's configuration to property mapping, or the same input
      * if the description has no mapping
+     * @param input input map
+     * @param desc plugin description
+     * @return mapped values
      */
     public static Map<String, String> demapProperties(final Map<String, String> input, final Description desc) {
         final Map<String, String> mapping = desc.getPropertiesMapping();
+        return demapProperties(input, mapping, true);
+    }
+
+    /**
+     * Reverses a set of properties mapped using the specified property mapping, or the same input
+     * if the description has no mapping
+     * @param input input map
+     * @param mapping key value mapping
+     * @param skip if true, ignore input entries when the key is not present in the mapping
+     * @return mapped values
+     */
+    public static Map<String, String> demapProperties(
+            final Map<String, String> input,
+            final Map<String, String> mapping,
+            final boolean skip
+    )
+    {
         if (null == mapping) {
             return input;
         }
@@ -138,6 +296,6 @@ public class Validator {
         for (final Map.Entry<String, String> entry : mapping.entrySet()) {
             rev.put(entry.getValue(), entry.getKey());
         }
-        return performMapping(input, rev, true);
+        return performMapping(input, rev, skip);
     }
 }

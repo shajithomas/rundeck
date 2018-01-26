@@ -35,10 +35,27 @@ import java.util.Map;
  */
 public interface IDispatchedExecution {
     /**
-     * Return the nodeset configuration
+     * Return the node exclude precedence
      * @return nodeset
      */
-    NodeSet getNodeSet();
+    Boolean getNodeExcludePrecedence();
+
+    /**
+     * @return the node dispatch threadcount
+     */
+    int getNodeThreadcount();
+
+    /**
+     * @return true or false for node dispatch keepgoing option, or null if unspecified.
+     *
+     */
+    public Boolean isKeepgoing();
+
+    /**
+     *
+     * @return node filter string
+     */
+    String getNodeFilter();
 
     /**
      * Get the argument line definition

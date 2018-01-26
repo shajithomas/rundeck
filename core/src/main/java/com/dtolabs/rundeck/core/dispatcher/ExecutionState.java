@@ -31,5 +31,8 @@ public enum ExecutionState {
     running,
     succeeded,
     aborted,
-    failed
+    failed,
+    failed_with_retry,
+    timedout,
+    other,
 }

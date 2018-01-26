@@ -17,8 +17,8 @@
 package com.dtolabs.rundeck.core.cli.project;
 
 import com.dtolabs.rundeck.core.cli.CLIToolLogger;
-import com.dtolabs.rundeck.core.common.Framework;
-import com.dtolabs.rundeck.core.common.FrameworkProject;
+import com.dtolabs.rundeck.core.dispatcher.CentralDispatcher;
+import com.dtolabs.rundeck.core.utils.IPropertyLookup;
 import org.apache.commons.cli.CommandLine;
 import org.apache.log4j.Category;
 
@@ -28,9 +28,7 @@ import java.util.Properties;
 
 
 /**
- * Creates and initializes the project structure. This involves creating the project repository and running an Ant build
- * script to populate/initialize the project. The build file is run via {@link AntProject} so can include access to tasks
- * and properties provided by it.
+ * Creates and initializes the project structure. This involves creating the project repository
  */
 public class CreateAction extends BaseAction {
     static Category logger = Category.getInstance(CreateAction.class.getName());
@@ -41,57 +39,39 @@ public class CreateAction extends BaseAction {
     /**
      * Create a new CreateAction, and parse the args from the CommandLine, using {@link BaseAction#parseBaseActionArgs(org.apache.commons.cli.CommandLine)} and
      * {@link #parseCreateActionArgs(org.apache.commons.cli.CommandLine)} to create the argument specifiers.
-     * @param main
-     * @param framework
-     * @param cli
+     * @param main logger
+     * @param framework framework
+     * @param cli cli
+     * @param properties properties
      */
-    public CreateAction(final CLIToolLogger main, final Framework framework, final CommandLine cli) {
-        this(main, framework, parseBaseActionArgs(cli), parseCreateActionArgs(cli));
-    }
-    /**
-     * Create a new CreateAction, and parse the args from the CommandLine, using {@link BaseAction#parseBaseActionArgs(org.apache.commons.cli.CommandLine)} and
-     * {@link #parseCreateActionArgs(org.apache.commons.cli.CommandLine)} to create the argument specifiers.
-     * @param main
-     * @param framework
-     * @param cli
-     * @param properties
-     */
-    public CreateAction(final CLIToolLogger main, final Framework framework, final CommandLine cli,
-                        final Properties properties) {
-        this(main, framework, parseBaseActionArgs(cli), parseCreateActionArgs(cli), properties);
+    public CreateAction(final CLIToolLogger main, final IPropertyLookup framework, final CommandLine cli,
+                        final Properties properties, final CentralDispatcher dispatcher) {
+        this(main, framework, parseBaseActionArgs(cli), parseCreateActionArgs(cli), properties, dispatcher);
     }
 
     /**
      * Create a new CreateAction
-     * @param main
+     * @param main logger
      * @param framework framework object
      * @param baseArgs base args
-     * @param createArgs
+     * @param createArgs create args
+     * @param projectProperties properties
      */
     public CreateAction(final CLIToolLogger main,
-                        final Framework framework,
+                        final IPropertyLookup framework,
                         final BaseActionArgs baseArgs,
                         final CreateActionArgs createArgs,
-                        final Properties projectProperties) {
-        super(main, framework, baseArgs);
+                        final Properties projectProperties,
+                        final CentralDispatcher dispatcher) {
+        super(main, framework, baseArgs,dispatcher);
         properties = projectProperties;
+        setCentralDispatcher(dispatcher);
         initArgs(createArgs);
-
     }
+
     /**
-     * Create a new CreateAction
-     * @param main
-     * @param framework framework object
-     * @param baseArgs base args
-     * @param createArgs
+     * @return is cygwin
      */
-    public CreateAction(final CLIToolLogger main,
-                        final Framework framework,
-                        final BaseActionArgs baseArgs,
-                        final CreateActionArgs createArgs) {
-        this(main, framework, baseArgs, createArgs, null);
-    }
-
     public boolean isCygwin() {
         return cygwin;
     }
@@ -113,8 +93,7 @@ public class CreateAction extends BaseAction {
      */
     public static interface CreateActionArgs {
         /**
-         * Return true if the node is using cygwin
-         * @return
+         * @return true if the node is using cygwin
          */
          public boolean isCygwin();
     }
@@ -132,7 +111,7 @@ public class CreateAction extends BaseAction {
     /**
      * Create args instance
      * @param cygwin cygwin
-     * @return
+     * @return args
      */
     public static CreateActionArgs createArgs(final boolean cygwin){
         return new CreateActionArgs(){
@@ -149,7 +128,7 @@ public class CreateAction extends BaseAction {
     /**
      * Execute the action.
      *
-     * @throws Throwable
+     * @throws Throwable any throwable
      */
     public void exec() throws Throwable {
         super.exec();
@@ -157,22 +136,49 @@ public class CreateAction extends BaseAction {
             throw new IllegalStateException("project was null");
 
         }
-        final File projectDir = new File(framework.getFrameworkProjectsBaseDir(), project.getFrameworkProject());
-        main.verbose("project directory exists: " + projectDir.exists());
-        try {
-            main.verbose("creating project structure in: " + projectDir.getAbsolutePath() + "...");
-            FrameworkProject.createFileStructure(projectDir);
-            main.log("Project structure created: "+projectDir.getAbsolutePath());
-        } catch (IOException e) {
-            main.error(e.getMessage());
-            throw new ProjectToolException("failed creating project structure", e);
+        String projectsDir = frameworkProperties.getProperty(
+                "framework.projects.dir"
+        );
+        getCentralDispatcher().createProject(
+                project, generateDefaultedProperties(
+                        true,
+                        new File(projectsDir, project)
+                )
+        );
+        main.log("Project was created: " + project);
+    }
+
+    private Properties generateDefaultedProperties(boolean addDefaultProps, File projectBaseDir) {
+        Properties newProps = new Properties();
+        if(addDefaultProps){
+            if (null == properties || !properties.containsKey("resources.source.1.type") ) {
+                //add default file source
+                newProps.setProperty("resources.source.1.type", "file");
+                newProps.setProperty(
+                        "resources.source.1.config.file", new File(
+                        projectBaseDir,
+                        "etc/resources.xml"
+                ).getAbsolutePath()
+                );
+                newProps.setProperty("resources.source.1.config.includeServerNode", "true");
+                newProps.setProperty("resources.source.1.config.generateFileAutomatically", "true");
+            }
+            if(null==properties || !properties.containsKey("service.NodeExecutor.default.provider")) {
+                newProps.setProperty("service.NodeExecutor.default.provider", "jsch-ssh");
+            }
+            if(null==properties || !properties.containsKey("service.FileCopier.default.provider")) {
+                newProps.setProperty("service.FileCopier.default.provider", "jsch-scp");
+            }
+            if (null == properties || !properties.containsKey("project.ssh-keypath")) {
+                newProps.setProperty("project.ssh-keypath", new File(System.getProperty("user.home"),
+                                                                     ".ssh/id_rsa").getAbsolutePath());
+            }
+            if(null==properties || !properties.containsKey("project.ssh-authentication")) {
+                newProps.setProperty("project.ssh-authentication", "privateKey");
+            }
         }
-        main.verbose("initializing project: " + project.getFrameworkProject());
-        final FrameworkProject d = framework.getFrameworkProjectMgr().createFrameworkProject(
-            project.getFrameworkProject(), properties);
-        if (!d.getBaseDir().exists() && !d.getBaseDir().mkdir()) {
-            throw new ProjectToolException("Failed to create project dir: " + d.getBaseDir());
-        }
+        newProps.putAll(properties);
+        return newProps;
     }
 
 

@@ -1,11 +1,12 @@
 #!/bin/bash
 
+
 #test output from /api/executions?queryparams
 
 DIR=$(cd `dirname $0` && pwd)
 source $DIR/include.sh
 
-sleep 1
+sleep 3
 
 #determine date
 #yyyy-MM-dd'T'HH:mm:ss'Z'
@@ -19,10 +20,11 @@ proj="test"
 params="project=${proj}&exec=echo+testing+adhoc+execution+query"
 
 # get listing
-docurl ${runurl}?${params} > $DIR/curl.out || fail "failed request: ${runurl}"
+docurl -X POST ${runurl}?${params} > $DIR/curl.out || fail "failed request: ${runurl}"
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
-execid1=$($XMLSTARLET sel -T -t -v "/result/executions/execution/@id" $DIR/curl.out)
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
+execid1=$($XMLSTARLET sel -T -t -v "/result/execution/@id" $DIR/curl.out)
+[ -n "$execid1" ] || fail "Didn't see execid"
 
 
 runurl="${APIURL}/run/command"
@@ -30,11 +32,11 @@ proj="test"
 params="project=${proj}&exec=echo+testing+adhoc+execution+query+should+fail;false"
 
 # get listing
-docurl ${runurl}?${params} > $DIR/curl.out || fail "failed request: ${runurl}"
+docurl -X POST ${runurl}?${params} > $DIR/curl.out || fail "failed request: ${runurl}"
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
-execid2=$($XMLSTARLET sel -T -t -v "/result/executions/execution/@id" $DIR/curl.out)
-
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
+execid2=$($XMLSTARLET sel -T -t -v "/result/execution/@id" $DIR/curl.out)
+[ -n "$execid2" ] || fail "Didn't see execid"
 
 ###
 # setup: create a new job and acquire the ID
@@ -44,7 +46,7 @@ uploadJob(){
     file=$1;shift
 
     # now submit req
-    runurl="${APIURL}/jobs/import"
+    runurl="${APIURL}/project/$proj/jobs/import"
 
     params="dupeOption=update"
 
@@ -58,7 +60,7 @@ uploadJob(){
         exit 2
     fi
 
-    sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+    $SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
     #result will contain list of failed and succeeded jobs, in this
     #case there should only be 1 failed or 1 succeeded since we submit only 1
@@ -161,25 +163,41 @@ runJob(){
     # get listing
     $CURL -H "$AUTHHEADER" --data-urlencode "argString=${execargs}" ${runurl}?${params} > $DIR/curl.out || fail "failed request: ${runurl}"
 
-    sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+    $SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
     #get execid
 
     execcount=$($XMLSTARLET sel -T -t -v "/result/executions/@count" $DIR/curl.out)
     execid=$($XMLSTARLET sel -T -t -v "/result/executions/execution/@id" $DIR/curl.out)
 
-    if [ "1" == "${execcount}" -a "" != "${execid}" ] ; then
-        echo "OK"
-    else
+    if [ "1" != "${execcount}" -o "" == "${execid}" ] ; then
         errorMsg "FAIL: expected run success message for execution id. (count: ${execcount}, id: ${execid})"
         exit 2
     fi
     echo $execid
 }
 
-execid=$(runJob $jobid)
+execid3=$(runJob $jobid)
 
-execid2=$(runJob $jobid2)
+execid4=$(runJob $jobid2)
+
+#wait for executions to complete
+rd-queue follow -q -e $execid1 || {
+  errorMsg "Failed to wait for execution $execid1 to finish"
+  exit 2
+}
+rd-queue follow -q -e $execid2 || {
+  errorMsg "Failed to wait for execution $execid2 to finish"
+  exit 2
+}
+rd-queue follow -q -e $execid3 || {
+  errorMsg "Failed to wait for execution $execid3 to finish"
+  exit 2
+}
+rd-queue follow -q -e $execid4 || {
+  errorMsg "Failed to wait for execution $execid4 to finish"
+  exit 2
+}
 
 ###
 # test execution queries
@@ -206,7 +224,7 @@ testExecQuery(){
         exit 2
     fi
 
-    sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+    $SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || (echo "${runurl}?${params}"; exit 2)
 
     #Check projects list
     itemcount=$($XMLSTARLET sel -T -t -v "/result/executions/@count" $DIR/curl.out)
@@ -214,12 +232,14 @@ testExecQuery(){
     expect=$1;shift
     if [ -n "${expect}" ] ; then 
         if [ "${expect}" != "$itemcount" ] ; then
-            errorMsg "FAIL: expected ${expect} but saw $itemcount results for test: $desc: $xargs"
+            errorMsg "FAIL: expected ${expect} but saw $itemcount results for test: $desc: $xargs, url: ${runurl}?${params}"
+            cat $DIR/curl.out
             exit 2
         fi
     else
         if [ "" == "$itemcount" -o "0" == "$itemcount" ] ; then
-            errorMsg "FAIL: expected some but saw $itemcount results for test: $desc: $xargs"
+            errorMsg "FAIL: expected some but saw $itemcount results for test: $desc: $xargs, url ${runurl}?${params}"
+            cat $DIR/curl.out
             exit 2
         fi
     fi
@@ -238,7 +258,7 @@ echo "TEST: /api/executions?begin=$startdate for project ${proj}..."
 
 testExecQuery $testName "begin=$startdate" "4"
 
-fakedate=$(date -u -v '+1y' "$dformat")
+fakedate=2213-05-08T01:05:19Z
 echo "TEST: /api/executions?begin= (DNE) for project ${proj}..."
 
 testExecQuery "$testName DNE" "begin=$fakedate" "0"

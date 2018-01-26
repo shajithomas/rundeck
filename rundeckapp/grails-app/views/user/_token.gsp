@@ -20,27 +20,44 @@
     Created: 6/20/11 1:48 PM
  --%>
 
-
-    <td>
-        <span class="apitoken">${token.token.encodeAsHTML()}</span>
-    </td>
-    <td>
+<g:set var="ukey" value="${g.rkey()}"/>
+    <span>
+        <code><g:enc>${token.token}</g:enc></code>
+    </span>
+    <span>
 
         <a style="${wdgt.styleVisible(if: token.token && !(params.showConfirm && params.token==token.token))}"
-           class="cleartokenbtn action button"
-           href="${createLink(controller: 'user', action: 'clearApiToken', params: [login: user.login,token:token.token])}">
-            Remove&hellip;
+           class=" textbtn textbtn-danger"
+           data-toggle="modal"
+           href="#myModal${enc(attr:ukey)}">
+           <g:icon name="remove-circle"/>
+            <g:message code="delete.action.label" />
         </a>
 
-        <div style="${wdgt.styleVisible(if: params.showConfirm && params.token==token.token)}" class="clearconfirm">
-            <span
-                class="confirmMessage">All clients using this token will lose authentication, are you sure you want to remove this API Token?</span>
-            <g:form controller="user" action="clearApiToken">
-                <g:hiddenField name="login" value="${user.login}"/>
-                <g:hiddenField name="token" value="${token.token}"/>
-                <input type="submit" class="no" value="No" name="No"/>
-                <input type="submit" class="yes" value="Yes" name="Yes"/>
-            </g:form>
-        </div>
+        <!-- Modal -->
+        <div class="modal fade clearconfirm" id="myModal${enc(attr: ukey)}" tabindex="-1" role="dialog" aria-labelledby="myModalLabel"
+             aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                        <h4 class="modal-title"><g:message code="userController.page.profile.heading.delete.token.title" /></h4>
+                    </div>
 
-    </td>
+                    <div class="modal-body">
+                        <p><g:message code="userController.page.profile.delete.token.description" /></p>
+                    </div>
+
+                    <div class="modal-footer">
+                        <g:form controller="user" action="clearApiToken">
+                            <g:hiddenField name="login" value="${user.login}"/>
+                            <g:hiddenField name="token" value="${token.token}"/>
+                            <button type="button" class="btn btn-default" data-dismiss="modal"><g:message code="button.action.Cancel" /></button>
+                            <input type="submit" class="btn btn-danger yes" value="Delete" name="Delete"/>
+                        </g:form>
+                    </div>
+                </div><!-- /.modal-content -->
+            </div><!-- /.modal-dialog -->
+        </div><!-- /.modal -->
+
+    </span>

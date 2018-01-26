@@ -24,7 +24,10 @@
 <g:if test="${options}">
 <span class="argstring">
 <g:each in="${options}" var="optionsel" status="i">
-    <span title="${optionsel.description?.encodeAsHTML()}"><span class="optgroup ${optionsel.secureInput?'secure':''}">-${optionsel.name.encodeAsHTML()}</span> &lt;${optionsel.secureInput && optionsel.defaultValue?'*****':optionsel.defaultValue?.encodeAsHTML()}&gt;${optionsel.multivalued?'+':''}</span>
+        <span class=" ${optionsel.secureInput?'secure':''}"
+              title="${enc(attr:optionsel.description)}"><g:enc>${optionsel.name}</g:enc></span><g:if
+        test="${optionsel.defaultValue}">: <code class="optvalue"><g:enc>${optionsel.secureInput?'*****':optionsel.defaultValue}</g:enc></code></g:if><g:if
+        test="${i <options.size()-1}">,</g:if>
 </g:each>
 </span>
 </g:if>

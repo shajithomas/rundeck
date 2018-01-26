@@ -16,31 +16,23 @@
 
 package com.dtolabs.rundeck.core.common;
 
-import com.dtolabs.rundeck.core.common.impl.URLFileUpdater;
-import com.dtolabs.rundeck.core.execution.service.ExecutionServiceException;
-import com.dtolabs.rundeck.core.resources.*;
-import com.dtolabs.rundeck.core.resources.format.ResourceFormatGenerator;
-import com.dtolabs.rundeck.core.resources.format.ResourceFormatGeneratorException;
-import com.dtolabs.rundeck.core.resources.format.UnsupportedFormatException;
+import com.dtolabs.rundeck.core.authorization.Attribute;
+import com.dtolabs.rundeck.core.authorization.Authorization;
+import com.dtolabs.rundeck.core.authorization.providers.EnvironmentalContext;
 import com.dtolabs.rundeck.core.utils.PropertyLookup;
+import com.dtolabs.utils.Streams;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.net.MalformedURLException;
-import java.net.URL;
+import java.io.*;
+import java.net.URI;
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 
 /**
  * Represents a project in the framework. A project is a repository of installed managed entities
  * organized by their type.
- * <p/>
+ * <br>
  */
-public class FrameworkProject extends FrameworkResourceParent {
+public class FrameworkProject extends FrameworkResourceParent implements IRundeckProject {
     public static final String PROP_FILENAME = "project.properties";
     public static final String ETC_DIR_NAME = "etc";
     public static final String NODES_XML = "resources.xml";
@@ -50,6 +42,17 @@ public class FrameworkProject extends FrameworkResourceParent {
     public static final String PROJECT_RESOURCES_ALLOWED_URL_PREFIX = "project.resources.allowedURL.";
     public static final String FRAMEWORK_RESOURCES_ALLOWED_URL_PREFIX = "framework.resources.allowedURL.";
     public static final String RESOURCES_SOURCE_PROP_PREFIX = "resources.source";
+    public static final String PROJECT_RESOURCES_MERGE_NODE_ATTRIBUTES = "project.resources.mergeNodeAttributes";
+
+    /**
+     * Creates an authorization environment for a project.
+     * @param project project name
+     * @return environment to evaluate authorization for a project
+     */
+    public static Set<Attribute> authorizationEnvironment(final String project) {
+        return Collections.singleton(new Attribute(URI.create(EnvironmentalContext.URI_BASE + "project"),
+                project));
+    }
     /**
      * Reference to deployments base directory
      */
@@ -62,232 +65,198 @@ public class FrameworkProject extends FrameworkResourceParent {
 
     private final IFrameworkProjectMgr projectResourceMgr;
 
-    private final File propertyFile;
-
     /**
      * reference to PropertyLookup object providing access to project.properties
      */
     private PropertyLookup lookup;
-    private List<ResourceModelSource> nodesSourceList;
+    /**
+     * Direct projec properties
+     */
+    private FilesystemFramework filesystemFramework;
+    private Framework framework;
+    private IProjectNodesFactory projectNodesFactory;
+    private Authorization projectAuthorization;
+    private IRundeckProjectConfig projectConfig;
+    private IRundeckProjectConfigModifier projectConfigModifier;
+
 
     /**
      * Constructor
      *
-     * @param name    Name of the project
-     * @param basedir the base directory for the Depot
+     * @param name        Name of the project
+     * @param basedir     the base directory for the Depot
+     * @param resourceMgr manager
+     * @param projectConfig  config
      */
-    public FrameworkProject(final String name, final File basedir, final IFrameworkProjectMgr resourceMgr) {
-        this(name, basedir, resourceMgr, null);
-    }
-    /**
-     * Constructor
-     *
-     * @param name    Name of the project
-     * @param basedir the base directory for the Depot
-     */
-    public FrameworkProject(final String name, final File basedir, final IFrameworkProjectMgr resourceMgr, final Properties properties) {
-        super(name, basedir, resourceMgr);
+    public FrameworkProject(
+            final String name,
+            final File basedir,
+            final FilesystemFramework filesystemFramework,
+            final IFrameworkProjectMgr resourceMgr,
+            final IRundeckProjectConfig projectConfig,
+            final IRundeckProjectConfigModifier projectConfigModifier
+    )
+    {
+
+        super(name, basedir, null);
+        this.filesystemFramework=filesystemFramework;
         projectResourceMgr = resourceMgr;
         resourcesBaseDir = new File(getBaseDir(), "resources");
-        etcDir = new File(getBaseDir(), ETC_DIR_NAME);
+        etcDir = getProjectEtcDir(getBaseDir());
         if (!etcDir.exists()) {
             if (!etcDir.mkdirs()) {
-                throw new FrameworkResourceException("error while creating project structure. " +
-                        "failed creating directory: " + etcDir.getAbsolutePath(), this );
+                throw new FrameworkResourceException(
+                        "error while creating project structure. " +
+                        "failed creating directory: " + etcDir.getAbsolutePath(), this
+                );
             }
         }
 
-        propertyFile = new File(getEtcDir(), PROP_FILENAME);
-        if ( !propertyFile.exists()) {
-            generateProjectPropertiesFile(false, properties);
-        }
-        loadProperties();
-
-        nodesSourceList = new ArrayList<ResourceModelSource>();
-
+        this.projectConfig=projectConfig;
+        this.projectConfigModifier=projectConfigModifier;
         initialize();
     }
 
-    private long propertiesLastReload=0L;
-    private synchronized void checkReloadProperties(){
-        if (needsPropertiesReload()) {
-            loadProperties();
-        }
-    }
-
-    private boolean needsPropertiesReload(){
-        final File fwkProjectPropertyFile = new File(projectResourceMgr.getFramework().getConfigDir(), PROP_FILENAME);
-        final long fwkPropsLastModified = fwkProjectPropertyFile.lastModified();
-        if(propertyFile.exists()){
-            return propertyFile.lastModified()>propertiesLastReload || fwkPropsLastModified>propertiesLastReload;
-        }else{
-            return fwkPropsLastModified > propertiesLastReload;
-        }
-    }
-    private synchronized void loadProperties() {
-        final Properties ownProps = new Properties();
-        ownProps.setProperty("project.name", getName());
-
-        //generic framework properties for a project
-        final File fwkProjectPropertyFile = new File(projectResourceMgr.getFramework().getConfigDir(), PROP_FILENAME);
-        final Properties nodeWideDepotProps = PropertyLookup.fetchProperties(fwkProjectPropertyFile);
-        nodeWideDepotProps.putAll(ownProps);
-
-        if (propertyFile.exists()) {
-            lookup = PropertyLookup.create(propertyFile,
-                    nodeWideDepotProps, projectResourceMgr.getFramework().getPropertyLookup());
-            getLogger().debug("loading existing project.properties: " + propertyFile.getAbsolutePath());
-            final long fwkPropsLastModified = fwkProjectPropertyFile.lastModified();
-            final long propsLastMod = propertyFile.lastModified();
-            propertiesLastReload = propsLastMod > fwkPropsLastModified ? propsLastMod : fwkPropsLastModified;
-        } else {
-            lookup = PropertyLookup.create(fwkProjectPropertyFile,
-                    ownProps, projectResourceMgr.getFramework().getPropertyLookup());
-            getLogger().debug("loading instance-level project.properties: " + propertyFile.getAbsolutePath());
-            propertiesLastReload = fwkProjectPropertyFile.lastModified();
-
-        }
-        lookup.expand();
-    }
-
-    private ArrayList<Exception> nodesSourceExceptions;
-    private long nodesSourcesLastReload = 0L;
-    private void loadResourceModelSources() {
-        nodesSourceExceptions = new ArrayList<Exception>();
-        //generate Configuration for file source
-        if (hasProperty(PROJECT_RESOURCES_FILE_PROPERTY)) {
-            try {
-                final Properties config = createFileSourceConfiguration();
-                logger.info("Source (project.resources.file): loading with properties: " + config);
-                nodesSourceList.add(loadResourceModelSource("file", config));
-            } catch (ExecutionServiceException e) {
-                logger.error("Failed to load file resource model source: " + e.getMessage(), e);
-                nodesSourceExceptions.add(e);
+    @Override
+    public IProjectInfo getInfo() {
+        return new IProjectInfo() {
+            @Override
+            public String getDescription() {
+                return hasProperty("project.description")?getProperty("project.description"):null;
             }
-        }
-        if(hasProperty(PROJECT_RESOURCES_URL_PROPERTY)) {
-            try{
-                final Properties config = createURLSourceConfiguration();
-                logger.info("Source (project.resources.url): loading with properties: " + config);
-                nodesSourceList.add(loadResourceModelSource("url", config));
-            } catch (ExecutionServiceException e) {
-                logger.error("Failed to load file resource model source: " + e.getMessage(), e);
-                nodesSourceExceptions.add(e);
+
+            @Override
+            public String getReadme() {
+                return readFileResourceContents("readme.md");
             }
-        }
 
-        final List<Map> list = listResourceModelConfigurations();
-        int i=1;
-        for (final Map map : list) {
-            final String providerType = (String) map.get("type");
-            final Properties props = (Properties) map.get("props");
-
-            logger.info("Source #" + i + " (" + providerType + "): loading with properties: " + props);
-            try {
-                nodesSourceList.add(loadResourceModelSource(providerType, props));
-            } catch (ExecutionServiceException e) {
-                logger.error("Failed loading resource model source #" + i + ", skipping: " + e.getMessage(), e);
-                nodesSourceExceptions.add(e);
+            @Override
+            public String getReadmeHTML() {
+                return null;
             }
-            i++;
-        }
 
-        nodesSourcesLastReload = getPropertyFile().lastModified();
+            @Override
+            public String getMotdHTML() {
+                return null;
+            }
+
+            @Override
+            public String getMotd() {
+                return readFileResourceContents("motd.md");
+            }
+        };
     }
+
+    private String readFileResourceContents(final String path) {
+        if (!existsFileResource(path)) {
+            return null;
+        }
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try {
+            loadFileResource(path, output);
+        } catch (IOException e) {
+            return null;
+        }
+        return output.toString();
+    }
+
     /**
-     * list the configurations of resource model providers.  Returns a list of maps containing:
+     * Get the etc dir from the basedir
+     */
+    public static File getProjectEtcDir(File baseDir) {
+        return new File(baseDir, ETC_DIR_NAME);
+    }
+
+    /**
+     * Get the project property file from the basedir
+     */
+    public static File getProjectPropertyFile(File baseDir) {
+        return new File(getProjectEtcDir(baseDir), PROP_FILENAME);
+    }
+
+    @Override
+    public String getProperty(final String name) {
+        return projectConfig.getProperty(name);
+    }
+
+    @Override
+    public boolean hasProperty(final String key) {
+        return projectConfig.hasProperty(key);
+    }
+
+    @Override
+    public Map<String, String> getProperties() {
+        return projectConfig.getProperties();
+    }
+
+    @Override
+    public Map<String, String> getProjectProperties() {
+        return projectConfig.getProjectProperties();
+    }
+
+    @Override
+    public Date getConfigLastModifiedTime() {
+        return projectConfig.getConfigLastModifiedTime();
+    }
+
+    /**
+     * list the configurations of resource model providers.
+     * @return a list of maps containing:
+     * <ul>
      * <li>type - provider type name</li>
      * <li>props - configuration properties</li>
+     * </ul>
      */
-    public synchronized List<Map> listResourceModelConfigurations(){
-        final ArrayList<Map> list = new ArrayList<Map>();
-        int i = 1;
-        boolean done = false;
-        while (!done) {
-            final String prefix = RESOURCES_SOURCE_PROP_PREFIX + "." + i;
-            if (hasProperty(prefix + ".type")) {
-                final String providerType = getProperty(prefix + ".type");
-                final Properties props = new Properties();
-                props.setProperty("project", getName());
-                final int len = (prefix + ".config.").length();
-                for (final Object o : lookup.getPropertiesMap().keySet()) {
-                    final String key = (String) o;
-                    if (key.startsWith(prefix + ".config.")) {
-                        props.setProperty(key.substring(len), getProperty(key));
-                    }
-                }
-                logger.info("Source #" + i + " (" + providerType + "): loading with properties: " + props);
-                final HashMap<String, Object> map = new HashMap<String, Object>();
-                map.put("type", providerType);
-                map.put("props", props);
-                list.add(map);
-            } else {
-                done = true;
-            }
-            i++;
-        }
-        return list;
+    @Override
+    public synchronized List<Map<String, Object>> listResourceModelConfigurations(){
+        return getProjectNodes().listResourceModelConfigurations();
     }
-
-    private Properties createURLSourceConfiguration() {
-        final URLResourceModelSource.Configuration build = URLResourceModelSource.Configuration.build();
-        build.url(getProperty(PROJECT_RESOURCES_URL_PROPERTY));
-        build.project(getName());
-
-        return build.getProperties();
-    }
-
-    private synchronized Collection<ResourceModelSource> getResourceModelSources() {
-        //determine if sources need to be reloaded
-        final long lastMod = getPropertyFile().lastModified();
-        if(lastMod> nodesSourcesLastReload){
-            nodesSourceList = new ArrayList<ResourceModelSource>();
-            loadResourceModelSources();
-        }
-        return nodesSourceList;
-    }
-
-    private ResourceModelSource loadResourceModelSource(String type, Properties configuration) throws ExecutionServiceException {
-
-        final ResourceModelSourceService nodesSourceService =
-            getFrameworkProjectMgr().getFramework().getResourceModelSourceService();
-        return nodesSourceService.getSourceForConfiguration(type, configuration);
-    }
-
-    private Properties createFileSourceConfiguration() {
-        final FileResourceModelSource.Configuration build = FileResourceModelSource.Configuration.build();
-        build.file(getProperty(PROJECT_RESOURCES_FILE_PROPERTY));
-        if(hasProperty(PROJECT_RESOURCES_FILEFORMAT_PROPERTY)){
-            build.format(getProperty(PROJECT_RESOURCES_FILEFORMAT_PROPERTY));
-        }
-        build.project(getName());
-        build.generateFileAutomatically(true);
-        build.includeServerNode(true);
-
-        return build.getProperties();
-    }
-    
-
 
     /**
-     * Create a new Depot object at the specified projects.directory
-     * @param name
-     * @param projectsDir
-     * @param resourceMgr
-     * @return
+     * @param name        project name
+     * @param projectsDir projects dir
+     * @param resourceMgr resourcemanager
+     *
+     * @return Create a new Project object at the specified projects.directory
      */
-    public static FrameworkProject create(final String name, final File projectsDir, final IFrameworkProjectMgr resourceMgr) {
-        return new FrameworkProject(name, new File(projectsDir, name), resourceMgr);
+    public static FrameworkProject create(
+            final String name,
+            final File projectsDir,
+            final FilesystemFramework filesystemFramework,
+            final IFrameworkProjectMgr resourceMgr,
+            IProjectNodesFactory nodesFactory
+    )
+    {
+        return FrameworkFactory.createFrameworkProject(name,
+                                                       new File(projectsDir, name),
+                                                       filesystemFramework,
+                                                       resourceMgr,
+                                                       nodesFactory,
+                                                       null);
     }
+
     /**
-     * Create a new Depot object at the specified projects.directory
-     * @param name
-     * @param projectsDir
-     * @param resourceMgr
-     * @return
+     * @param name        project name
+     * @param projectsDir projects dir
+     * @param resourceMgr resourcemanager
+     *
+     * @return Create a new Project object at the specified projects.directory
      */
-    public static FrameworkProject create(final String name, final File projectsDir, final IFrameworkProjectMgr resourceMgr, final Properties properties) {
-        return new FrameworkProject(name, new File(projectsDir, name), resourceMgr, properties);
+    public static FrameworkProject create(
+            final String name,
+            final File projectsDir,
+            final FilesystemFramework filesystemFramework,
+            final IFrameworkProjectMgr resourceMgr
+    )
+    {
+        return FrameworkFactory.createFrameworkProject(
+                name,
+                new File(projectsDir, name),
+                filesystemFramework,
+                resourceMgr,
+                FrameworkFactory.createNodesFactory(filesystemFramework),
+                null
+        );
     }
 
 
@@ -301,13 +270,13 @@ public class FrameworkProject extends FrameworkResourceParent {
         return file.exists() && file.isDirectory();
     }
 
-    public Collection listChildNames() {
-        HashSet childnames = new HashSet();
+    public Collection<String> listChildNames() {
+        HashSet<String> childnames = new HashSet<>();
         if(resourcesBaseDir.isDirectory()){
             final String[] list = resourcesBaseDir.list();
             if (null != list) {
-                for (int i = 0; i < list.length; i++) {
-                    final File dir = new File(resourcesBaseDir, list[i]);
+                for (final String aList : list) {
+                    final File dir = new File(resourcesBaseDir, aList);
                     if (dir.isDirectory()) {
                         childnames.add(dir.getName());
                     }
@@ -320,17 +289,12 @@ public class FrameworkProject extends FrameworkResourceParent {
     /**
      * Create a new type and store it
      *
-     * @param resourceType
-     * @return
      */
     public IFrameworkResource createChild(final String resourceType) {
         throw new UnsupportedOperationException("createChild");
     }
 
 
-    public File getPropertyFile() {
-        return propertyFile;
-    }
 
     public IFrameworkProjectMgr getFrameworkProjectMgr() {
         return projectResourceMgr;
@@ -338,10 +302,6 @@ public class FrameworkProject extends FrameworkResourceParent {
 
     public static boolean exists(final String project, final IFrameworkProjectMgr projectResourceMgr) {
         return projectResourceMgr.existsFrameworkProject(project);
-    }
-
-    public boolean existsFrameworkType(final String name) {
-        return existsChild(name);
     }
 
     /**
@@ -353,43 +313,15 @@ public class FrameworkProject extends FrameworkResourceParent {
         return etcDir;
     }
 
-
-    /**
-     * Return specific nodes resources file path for the project, based on the framework.nodes.file.name property
-     * @return
-     */
-    public String getNodesResourceFilePath() {
-        if(hasProperty(PROJECT_RESOURCES_FILE_PROPERTY)) {
-            return new File(getProperty(PROJECT_RESOURCES_FILE_PROPERTY)).getAbsolutePath();
-        }
-        final Framework framework = projectResourceMgr.getFramework();
-        final String s;
-        if(framework.hasProperty(Framework.NODES_RESOURCES_FILE_PROP)){
-            return new File(getEtcDir(), framework.getProperty(Framework.NODES_RESOURCES_FILE_PROP)).getAbsolutePath();
-        }else{
-            return new File(getEtcDir(), NODES_XML).getAbsolutePath();
-        }
-    }
     /**
      * Returns the set of nodes for the project
      *
      * @return an instance of {@link INodeSet}
+     * @throws NodeFileParserException on parse error
      */
+    @Override
     public INodeSet getNodeSet() throws NodeFileParserException {
-        //iterate through sources, and add nodes
-        final AdditiveListNodeSet list = new AdditiveListNodeSet();
-        nodesSourceExceptions = new ArrayList<Exception>();
-        for (final ResourceModelSource nodesSource : getResourceModelSources()) {
-            try {
-                list.addNodeSet(nodesSource.getNodes());
-            } catch (ResourceModelSourceException e) {
-                logger.error("Cannot get nodes from ["+nodesSource.toString()+"]: "+e.getMessage(), e);
-                nodesSourceExceptions.add(new ResourceModelSourceException(
-                    "Cannot get nodes from [" + nodesSource.toString() + "]: " + e.getMessage(), e));
-            }
-        }
-        return list;
-
+        return getProjectNodes().getNodeSet();
     }
 
     /**
@@ -400,12 +332,9 @@ public class FrameworkProject extends FrameworkResourceParent {
      * @throws UpdateUtils.UpdateException if an error occurs while trying to update the resources file
      *
      */
+    @Override
     public boolean updateNodesResourceFile() throws UpdateUtils.UpdateException {
-        if (shouldUpdateNodesResourceFile()) {
-            updateNodesResourceFileFromUrl(getProperty(PROJECT_RESOURCES_URL_PROPERTY), null, null);
-            return true;
-        }
-        return false;
+        return getProjectNodes().updateNodesResourceFile(ProjectNodeSupport.getNodesResourceFilePath(this, framework));
     }
 
     /**
@@ -416,204 +345,32 @@ public class FrameworkProject extends FrameworkResourceParent {
      * @param password or null
      * @throws com.dtolabs.rundeck.core.common.UpdateUtils.UpdateException if an error occurs during the update process
      */
-    public void updateNodesResourceFileFromUrl(final String providerURL, final String username,
-                                              final String password) throws UpdateUtils.UpdateException {
-        if(!validateResourceProviderURL(providerURL)){
-            throw new UpdateUtils.UpdateException("providerURL is not allowed: " + providerURL);
-        }
-        UpdateUtils.updateFileFromUrl(providerURL, getNodesResourceFilePath(), username, password,
-            URLFileUpdater.factory());
-        logger.debug("Updated nodes resources file: " + getNodesResourceFilePath());
+    @Override
+    public void updateNodesResourceFileFromUrl(
+            final String providerURL, final String username,
+            final String password
+    ) throws UpdateUtils.UpdateException
+    {
+        getProjectNodes().updateNodesResourceFileFromUrl(
+                providerURL,
+                username,
+                password,
+                ProjectNodeSupport.getNodesResourceFilePath(this, framework)
+        );
     }
 
-    /**
-     * Return true if the URL is valid, and allowed by configuration
-     */
-    boolean validateResourceProviderURL(final String providerURL) throws UpdateUtils.UpdateException {
-        final URL url;
-        try {
-            url= new URL(providerURL);
-        } catch (MalformedURLException e) {
-            throw new UpdateUtils.UpdateException("Invalid URL: " + providerURL, e);
-        }
-        //assert allowed URL scheme
-        if(!("file".equals(url.getProtocol()) || "http".equals(url.getProtocol()) || "https".equals(url.getProtocol()))) {
-            throw new UpdateUtils.UpdateException("URL protocol not allowed: " + url.getProtocol());
-        }
-
-        return isAllowedProviderURL(providerURL);
-    }
-
-    /**
-     * Return true in these cases:
-     *  1. project.properties allows URL and framework.properties allows URL.
-     *  2. project.properties allows URL and no regexes are set in framework.properties
-     *  3. project.properties no regexes are set, and framework.properites allows URL.
-     */
-    boolean isAllowedProviderURL(final String providerURL) {
-        checkReloadProperties();
-        //whitelist the configured providerURL
-        if (hasProperty(PROJECT_RESOURCES_URL_PROPERTY) && getProperty(PROJECT_RESOURCES_URL_PROPERTY).equals(
-            providerURL)) {
-            return true;
-        }
-        //check regex properties for project props
-        int i = 0;
-        boolean projpass = false;
-        boolean setproj = false;
-        while (hasProperty(PROJECT_RESOURCES_ALLOWED_URL_PREFIX + i)) {
-            setproj = true;
-            final String regex = getProperty(PROJECT_RESOURCES_ALLOWED_URL_PREFIX + i);
-            final Pattern pat = Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
-            final Matcher matcher = pat.matcher(providerURL);
-            if (matcher.matches()) {
-                logger.debug(
-                    "ProviderURL allowed by project property \"project.resources.allowedURL." + i + "\": " + regex);
-                projpass = true;
-                break;
-            }
-            i++;
-        }
-        if (!projpass && setproj) {
-            //was checked but failed match
-            return false;
-        }
-        assert projpass ^ !setproj;
-        //check framework props
-        i = 0;
-
-        final Framework framework = getFrameworkProjectMgr().getFramework();
-        final boolean setframework = framework.hasProperty(FRAMEWORK_RESOURCES_ALLOWED_URL_PREFIX + i);
-        if (!setframework && projpass) {
-            //unset in framework.props, allowed by project.props
-            return true;
-        }
-        if(!setframework && !setproj){
-            //unset in both
-            return false;
-        }
-        while (framework.hasProperty(FRAMEWORK_RESOURCES_ALLOWED_URL_PREFIX + i)) {
-            final String regex = framework.getProperty(FRAMEWORK_RESOURCES_ALLOWED_URL_PREFIX + i);
-            final Pattern pat = Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
-            final Matcher matcher = pat.matcher(providerURL);
-            if (matcher.matches()) {
-                logger.debug(
-                    "ProviderURL allowed by framework property \"framework.resources.allowedURL." + i + "\": " + regex);
-                //allowed by framework.props, and unset or allowed by project.props,
-                return true;
-            }
-            i++;
-        }
-        if (projpass) {
-            logger.warn("providerURL was allowed by project.properties, but is not allowed by framework.properties: "
-                        + providerURL);
-        }
-        return false;
-    }
-
-    /**
-     * Update the resources file from a source file
-     *
-     * @param source the source file
-     * @throws UpdateUtils.UpdateException if an error occurs while trying to update the resources file
-     *
-     */
-    public void updateNodesResourceFile(final File source) throws UpdateUtils.UpdateException {
-        UpdateUtils.updateFileFromFile(source, getNodesResourceFilePath());
-        logger.debug("Updated nodes resources file: " + getNodesResourceFilePath());
-    }
 
     /**
      * Update the resources file given an input Nodes set
      *
-     * @param source the source nodes
-     * @throws UpdateUtils.UpdateException if an error occurs while trying to update the resources file or generate
-     * nodes
-     * @deprecated in favor of INodeSet interface
-     */
-    public void updateNodesResourceFile(final Nodes source) throws UpdateUtils.UpdateException {
-        final NodeSetImpl nodeset = new NodeSetImpl();
-        nodeset.putNodes(source.listNodes());
-        updateNodesResourceFile(nodeset);
-    }
-    /**
-     * Update the resources file given an input Nodes set
-     *
-     * @param source the source nodes
+     * @param nodeset nodes
      * @throws UpdateUtils.UpdateException if an error occurs while trying to update the resources file or generate
      * nodes
      *
      */
+    @Override
     public void updateNodesResourceFile(final INodeSet nodeset) throws UpdateUtils.UpdateException {
-        final String nodesResourceFilePath = getNodesResourceFilePath();
-        final ResourceFormatGenerator generator;
-        File destfile = new File(getNodesResourceFilePath());
-        try {
-            generator =
-                getFrameworkProjectMgr().getFramework().getResourceFormatGeneratorService()
-                    .getGeneratorForFileExtension(destfile);
-        } catch (UnsupportedFormatException e) {
-            throw new UpdateUtils.UpdateException(
-                "Unable to determine file format for file: " + nodesResourceFilePath,e);
-        }
-        File resfile = null;
-        try {
-            resfile = File.createTempFile("resource-temp", destfile.getName());
-            resfile.deleteOnExit();
-        } catch (IOException e) {
-            throw new UpdateUtils.UpdateException("Unable to create temp file: " + e.getMessage(), e);
-        }
-        //serialize nodes and replace the nodes resource file
-
-        try {
-            final FileOutputStream stream = new FileOutputStream(resfile);
-            try {
-                generator.generateDocument(nodeset, stream);
-            } finally {
-                stream.close();
-            }
-        } catch (IOException e) {
-            throw new UpdateUtils.UpdateException("Unable to generate resources file: " + e.getMessage(), e);
-        } catch (ResourceFormatGeneratorException e) {
-            throw new UpdateUtils.UpdateException("Unable to generate resources file: " + e.getMessage(), e);
-        }
-
-        updateNodesResourceFile(resfile);
-        if(!resfile.delete()) {
-            getLogger().warn("failed to remove temp file: " + resfile);
-        }
-        getLogger().debug("generated resources file: " + resfile.getAbsolutePath());
-    }
-
-    /**
-     * Return true if the resources file should be pulled from the server If he node is the server and workbench
-     * integration is enabled then the file should not be updated.
-     *
-     * @return
-     */
-    private boolean shouldUpdateNodesResourceFile() {
-        return hasProperty(PROJECT_RESOURCES_URL_PROPERTY);
-    }
-
-
-    /**
-     * Return the property value by name
-     *
-     * @param name
-     * @return
-     */
-    public synchronized String getProperty(final String name) {
-        checkReloadProperties();
-        return lookup.getProperty(name);
-    }
-
-
-    public synchronized boolean hasProperty(final String key) {
-        checkReloadProperties();
-        return lookup.hasProperty(key);
-    }
-    public Map getProperties() {
-        return lookup.getPropertiesMap();
+       getProjectNodes().updateNodesResourceFile(nodeset,ProjectNodeSupport.getNodesResourceFilePath(this, framework));
     }
 
 
@@ -622,9 +379,7 @@ public class FrameworkProject extends FrameworkResourceParent {
      * Creates the file structure for a project
      *
      * @param projectDir     The project base directory
-    * @param moduleDir     The project module directory    *
-     * @param createModLib Create a project module library
-     * @throws IOException
+     * @throws IOException on io error
      */
     public static void createFileStructure(final File projectDir) throws IOException {
        /*
@@ -643,87 +398,64 @@ public class FrameworkProject extends FrameworkResourceParent {
 
     }
 
-    /**
-     * Create project.properties file based on $RDECK_BASE/etc/project.properties
-     * @param overwrite Overwrite existing properties file
-     */
-    protected void generateProjectPropertiesFile(final boolean overwrite) {
-        generateProjectPropertiesFile(overwrite, null);
+    @Override
+    public boolean existsFileResource(final String path) {
+        File result = new File(getBaseDir(), path);
+        return result.exists()&& result.isFile();
     }
 
-    /**
-     * Create project.properties file based on $RDECK_BASE/etc/project.properties
-     *
-     * @param overwrite Overwrite existing properties file
-     */
-    protected void generateProjectPropertiesFile(final boolean overwrite, final Properties properties) {
-        generateProjectPropertiesFile(overwrite, properties, false, null);
+    @Override
+    public boolean existsDirResource(final String path) {
+        File result = new File(getBaseDir(), path);
+        return result.exists()&& result.isDirectory();
     }
 
-    /**
-     * Create project.properties file based on $RDECK_BASE/etc/project.properties
-     *
-     * @param overwrite Overwrite existing properties file
-     * @param properties properties to use
-     * @param merge if true, merge existing properties that are not replaced
-     * @param removePrefixes set of property prefixes to remove from original
-     */
-    protected void generateProjectPropertiesFile(final boolean overwrite, final Properties properties,
-                                                 final boolean merge, final Set<String> removePrefixes) {
-        final File destfile = getPropertyFile();
-        if (destfile.exists() && !overwrite) {
-            return;
+    @Override
+    public List<String> listDirPaths(final String path) {
+        if (!existsDirResource(path)) {
+            return Collections.emptyList();
         }
-        final Properties newProps = new Properties();
-        newProps.setProperty("project.name", getName());
-        newProps.setProperty("project.resources.file", new File(getEtcDir(), "resources.xml").getAbsolutePath());
-        if(merge) {
-            final Properties orig = new Properties();
+        File dir = new File(getBaseDir(), path);
+        File[] list = dir.listFiles();
+        ArrayList<String> result = new ArrayList<>();
+        String prefix=path;
+        if(path.endsWith("/")) {
+            prefix = path.substring(0, path.length() - 1);
+        }
+        assert list != null;
+        for (File s : list) {
+            result.add(prefix + "/" + s.getName() + (s.isDirectory() ? "/" : ""));
+        }
+        return result;
+    }
 
-            if(destfile.exists()){
-                try {
-                    final FileInputStream fileInputStream = new FileInputStream(destfile);
-                    try {
-                        orig.load(fileInputStream);
-                    } finally {
-                        fileInputStream.close();
-                    }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-            //add all original properties that are not in the incoming  properties, and are not
-            //matched by one of the remove prefixes
-            entry: for (final Object o : orig.entrySet()) {
-                Map.Entry entry=(Map.Entry) o;
-                //determine if
-                final String key = (String) entry.getKey();
-                for (final String replacePrefix : removePrefixes) {
-                    if(key.startsWith(replacePrefix)){
-                        //skip this key
-                        continue entry;
-                    }
-                }
-                newProps.put(entry.getKey(), entry.getValue());
-            }
-        }
-        //overwrite original with the input properties
-        if (null != properties) {
-            newProps.putAll(properties);
-        }
+    @Override
+    public boolean deleteFileResource(final String path) {
+        File result = new File(getBaseDir(), path);
+        return !result.exists() || result.delete();
+    }
 
-        try {
-            final FileOutputStream fileOutputStream = new FileOutputStream(destfile);
-            try {
-                newProps.store(fileOutputStream, "Project " + getName() + " configuration, generated");
-            } finally {
-                fileOutputStream.close();
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
+    @Override
+    public long storeFileResource(final String path, final InputStream input) throws IOException {
+        File result = new File(getBaseDir(), path);
+        if(!result.getParentFile().exists()){
+            result.getParentFile().mkdirs();
         }
+        try(FileOutputStream fos = new FileOutputStream(result)) {
+           return Streams.copyStream(input, fos);
+        }
+    }
 
-        getLogger().debug("generated project.properties: " + destfile.getAbsolutePath());
+    @Override
+    public long loadFileResource(final String path, final OutputStream output) throws IOException {
+        File result = new File(getBaseDir(), path);
+        try(FileInputStream fis = new FileInputStream(result)) {
+            return Streams.copyStream(fis, output);
+        }
+    }
+
+    protected void generateProjectPropertiesFile(boolean overwrite, Properties properties, boolean addDefault){
+        projectConfigModifier.generateProjectPropertiesFile(overwrite, properties, addDefault);
     }
     /**
      * Update the project properties file by setting updating the given properties, and removing
@@ -731,9 +463,19 @@ public class FrameworkProject extends FrameworkResourceParent {
      * @param properties new properties to put in the file
      * @param removePrefixes prefixes of properties to remove from the file
      */
+    @Override
     public void mergeProjectProperties(final Properties properties, final Set<String> removePrefixes) {
-        generateProjectPropertiesFile(true, properties, true, removePrefixes);
+        projectConfigModifier.mergeProjectProperties(properties, removePrefixes);
     }
+    /**
+     * Set the project properties file contents exactly
+     * @param properties new properties to use in the file
+     */
+    @Override
+    public void setProjectProperties(final Properties properties) {
+        projectConfigModifier.setProjectProperties(properties);
+    }
+
 
     /**
      * Checks if project is installed by checking if it's basedir directory exists.
@@ -745,9 +487,36 @@ public class FrameworkProject extends FrameworkResourceParent {
     }
 
     /**
-     * Return the set of exceptions produced by the last attempt to invoke all node providers
+     * @return the set of exceptions produced by the last attempt to invoke all node providers
      */
     public ArrayList<Exception> getResourceModelSourceExceptions() {
-        return nodesSourceExceptions;
+        return getProjectNodes().getResourceModelSourceExceptions();
+    }
+
+    public Framework getFramework() {
+        return framework;
+    }
+
+    public void setFramework(final Framework framework) {
+        this.framework = framework;
+    }
+
+
+    @Override
+    public IProjectNodes getProjectNodes() {
+        return projectNodesFactory.getNodes(getName());
+    }
+
+    @Override
+    public Authorization getProjectAuthorization() {
+        return projectAuthorization;
+    }
+
+    public void setProjectAuthorization(Authorization projectAuthorization) {
+        this.projectAuthorization = projectAuthorization;
+    }
+
+    public void setProjectNodesFactory(IProjectNodesFactory projectNodesFactory) {
+        this.projectNodesFactory = projectNodesFactory;
     }
 }

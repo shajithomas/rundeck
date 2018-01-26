@@ -22,30 +22,32 @@
 --%>
 <tr class="${index!=null && (index%2)==1?'alternateRow':''}">
     <td  style="width:16px">
-        <g:expander key="udetail_${user.login}"/>
+        <g:expander key="udetail_${user.login}" text=""/>
     </td>
     <td>
         <span class="userlogin" >
-            ${user.login}
+            <g:enc>${user.login}</g:enc>
         </span>
         <span class="username" >
-            ${user.firstName} ${user.lastName}
+            <g:enc>${user.firstName} ${user.lastName}</g:enc>
         </span>
         <span class="useremail">
             <g:if test="${user.email}">
-                &lt;${user.email}&gt;
+                &lt;<g:enc>${user.email}</g:enc>&gt;
             </g:if>
         </span>
 
         <g:set var="adminauth" value="${auth.resourceAllowedTest(kind:'user',action:[AuthConstants.ACTION_ADMIN],context:'application')}"/>
         <g:if test="${adminauth}">
         <span class="useredit">
-            <g:link action="edit" params="[login:user.login]"><g:img file="icon-tiny-edit.png" width="12px" height="12px"/></g:link>
+            <g:link action="edit" params="[login:user.login]" class="textbtn textbtn-info textbtn-on-hover">
+                <i class="glyphicon glyphicon-edit"></i> edit
+            </g:link>
         </span>
         </g:if>
     </td>
 </tr>
-<tr class="${index!=null && (index%2)==1?'alternateRow':''}" id="udetail_${user.login}" style="display:none">
+<tr class="${index!=null && (index%2)==1?'alternateRow':''}" id="udetail_${enc(attr:user.login)}" style="display:none">
     <td></td>
     <td >
         <tmpl:user user="${user}" expandAccess="${true}"/>

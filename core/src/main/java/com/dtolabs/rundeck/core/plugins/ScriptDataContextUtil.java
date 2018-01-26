@@ -26,6 +26,7 @@ package com.dtolabs.rundeck.core.plugins;
 import com.dtolabs.rundeck.core.Constants;
 import com.dtolabs.rundeck.core.common.Framework;
 import com.dtolabs.rundeck.core.common.FrameworkProject;
+import com.dtolabs.rundeck.core.common.IRundeckProject;
 
 import java.io.File;
 import java.util.*;
@@ -38,24 +39,31 @@ import java.util.*;
 public class ScriptDataContextUtil {
 
     private static File getVarDirForProject(final Framework framework, final String projectName) {
-        final FrameworkProject frameworkProject = framework.getFrameworkProjectMgr().getFrameworkProject(
-            projectName);
-        return new File(Constants.getBaseVar(frameworkProject.getBaseDir().getAbsolutePath()));
+        return new File(
+                Constants.getBaseVar(
+                        new File(
+                                framework.getFilesystemFramework().getFrameworkProjectsBaseDir(),
+                                projectName
+                        ).getAbsolutePath()
+                )
+        );
     }
 
     /**
-     * Returns a data context for executing a script plugin or provider, which contains two datasets:
+     * @return a data context for executing a script plugin or provider, which contains two datasets:
      * plugin: {vardir: [dir], tmpdir: [dir]}
      * and
      * rundeck: {base: [basedir]}
+     * @param framework framework
+     *
      */
     public static Map<String, Map<String, String>> createScriptDataContext(final Framework framework) {
         final Map<String, String> rundeckDataContext = new HashMap<String, String>();
         final Map<String, String> pluginDataContext = new HashMap<String, String>();
 
-        rundeckDataContext.put("base", framework.getBaseDir().getAbsolutePath());
+        rundeckDataContext.put("base", framework.getFilesystemFramework().getBaseDir().getAbsolutePath());
 
-        final File vardir = new File(Constants.getBaseVar(framework.getBaseDir().getAbsolutePath()));
+        final File vardir = new File(Constants.getBaseVar(framework.getFilesystemFramework().getBaseDir().getAbsolutePath()));
         final File tmpdir = new File(vardir, "tmp");
         pluginDataContext.put("vardir", vardir.getAbsolutePath());
         pluginDataContext.put("tmpdir", tmpdir.getAbsolutePath());
@@ -69,9 +77,11 @@ public class ScriptDataContextUtil {
     }
 
     /**
-     * Create a data context for executing a script plugin or provider, for a project context. Extends the context
+     * @return Create a data context for executing a script plugin or provider, for a project context. Extends the context
      * provided by {@link #createScriptDataContext(com.dtolabs.rundeck.core.common.Framework)} by setting the plugin.vardir to be
      * a dir specific to the project's basedir.
+     * @param framework fwk
+     * @param projectName project
      */
     public static Map<String, Map<String, String>> createScriptDataContextForProject(final Framework framework,
                                                                                      final String projectName) {

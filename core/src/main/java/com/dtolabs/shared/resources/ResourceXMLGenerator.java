@@ -27,8 +27,8 @@ import com.dtolabs.rundeck.core.common.INodeEntry;
 import com.dtolabs.rundeck.core.common.NodesFileGenerator;
 import static com.dtolabs.shared.resources.ResourceXMLConstants.*;
 
-import com.dtolabs.utils.XMLChar;
 import org.apache.log4j.Logger;
+import org.apache.xerces.util.XMLChar;
 import org.dom4j.Document;
 import org.dom4j.DocumentFactory;
 import org.dom4j.Element;
@@ -66,7 +66,7 @@ public class ResourceXMLGenerator implements NodesFileGenerator {
     /**
      * Constructor for the ResourceXMLGenerator
      *
-     * @param file destination output file
+     * @param output destination output file
      */
     public ResourceXMLGenerator(final OutputStream output) {
         this.output = output;
@@ -74,18 +74,14 @@ public class ResourceXMLGenerator implements NodesFileGenerator {
     }
 
     /**
-     * Return entities list
-     *
-     * @return
+     * @return entities list
      */
     public List<ResourceXMLParser.Entity> getEntities() {
         return entities;
     }
 
     /**
-     * Set entities list
-     *
-     * @param entities
+     * @param entities entities list
      */
     public void setEntities(final List<ResourceXMLParser.Entity> entities) {
         this.entities = entities;
@@ -94,7 +90,7 @@ public class ResourceXMLGenerator implements NodesFileGenerator {
     /**
      * Add entity object
      *
-     * @param entity
+     * @param entity entity
      */
     public void addEntity(final ResourceXMLParser.Entity entity) {
         entities.add(entity);
@@ -103,7 +99,7 @@ public class ResourceXMLGenerator implements NodesFileGenerator {
     /**
      * Add Node object
      *
-     * @param node
+     * @param node node
      */
     public void addNode(final INodeEntry node) {
         //convert to entity
@@ -120,9 +116,9 @@ public class ResourceXMLGenerator implements NodesFileGenerator {
     /**
      * Create entity from Node
      *
-     * @param node
+     * @param node node
      *
-     * @return
+     * @return entity
      */
     private ResourceXMLParser.Entity createEntity(final INodeEntry node) {
         final ResourceXMLParser.Entity ent = new ResourceXMLParser.Entity();
@@ -136,6 +132,10 @@ public class ResourceXMLGenerator implements NodesFileGenerator {
                 ent.setProperty(setName, value);
             }
         }
+        if(null!=node.getTags()){
+            ent.setProperty("tags", joinStrings(node.getTags(), ", "));
+        }
+
 
 
         return ent;
@@ -144,14 +144,17 @@ public class ResourceXMLGenerator implements NodesFileGenerator {
     /**
      * utility to join tags into string
      *
-     * @param tags
-     * @param delim
+     * @param tags tags set
+     * @param delim delimiter string
      *
-     * @return
+     * @return joined string
      */
     private static String joinStrings(final Set tags, final String delim) {
+        ArrayList<String> strings = new ArrayList<String>(tags);
+        String[] objects = strings.toArray(new String[strings.size()]);
+        Arrays.sort(objects);
         final StringBuffer sb = new StringBuffer();
-        for (final Object tag : tags) {
+        for (final String tag : objects) {
             if (sb.length() > 0) {
                 sb.append(delim);
             }
@@ -164,7 +167,7 @@ public class ResourceXMLGenerator implements NodesFileGenerator {
     /**
      * Generate and store the XML file
      *
-     * @throws IOException
+     * @throws IOException on error
      */
     public void generate() throws IOException {
         final Document doc = DocumentFactory.getInstance().createDocument();
@@ -192,8 +195,8 @@ public class ResourceXMLGenerator implements NodesFileGenerator {
     /**
      * Generate resources section and resource references
      *
-     * @param ent
-     * @param entity
+     * @param ent element
+     * @param entity entity
      */
     private void genAttributes(final Element ent, final ResourceXMLParser.Entity entity) {
         if (null == entity.getProperties() ) {
@@ -202,9 +205,9 @@ public class ResourceXMLGenerator implements NodesFileGenerator {
         for (final String key:entity.getProperties().stringPropertyNames()){
             if (!ResourceXMLConstants.allPropSet.contains(key)) {
                 //test attribute name is a valid XML attribute name
-                if(XMLChar.isValidName(key)){
+                if (XMLChar.isValidName(key) && !key.contains(":") && !key.contains(".")) {
                     ent.addAttribute(key, entity.getProperties().getProperty(key));
-                }else {
+                } else {
                     //add sub element
                     final Element atelm = ent.addElement(ATTRIBUTE_TAG);
                     atelm.addAttribute(ATTRIBUTE_NAME_ATTR, key);
@@ -218,8 +221,8 @@ public class ResourceXMLGenerator implements NodesFileGenerator {
     /**
      * Gen "node" tag contents
      *
-     * @param ent
-     * @param entity
+     * @param ent element
+     * @param entity entity
      */
     private void genNode(final Element ent, final ResourceXMLParser.Entity entity) {
         for (final String nodeProp : nodeProps) {
@@ -234,10 +237,10 @@ public class ResourceXMLGenerator implements NodesFileGenerator {
     /**
      * Create entity tag based on resourceType of entity, and add common attributes
      *
-     * @param root
-     * @param entity
+     * @param root element
+     * @param entity entity
      *
-     * @return
+     * @return element
      */
     private Element genEntityCommon(final Element root, final ResourceXMLParser.Entity entity) {
         final Element tag = root.addElement(entity.getResourceType());
@@ -248,11 +251,10 @@ public class ResourceXMLGenerator implements NodesFileGenerator {
     }
 
     /**
-     * Return "" if input is null, otherwise return input
+     * @return "" if input is null, otherwise return input
      *
      * @param s input string
      *
-     * @return
      */
     private String notNull(final String s) {
         if (null == s) {
@@ -264,10 +266,10 @@ public class ResourceXMLGenerator implements NodesFileGenerator {
     /**
      * Write Document to a file
      *
-     * @param file
-     * @param doc
+     * @param output stream
+     * @param doc document
      *
-     * @throws IOException
+     * @throws IOException on error
      */
     private static void serializeDocToStream(final OutputStream output, final Document doc) throws IOException {
         final OutputFormat format = OutputFormat.createPrettyPrint();

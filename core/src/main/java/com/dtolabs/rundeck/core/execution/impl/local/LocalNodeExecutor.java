@@ -29,19 +29,18 @@ import com.dtolabs.rundeck.core.dispatcher.DataContextUtils;
 import com.dtolabs.rundeck.core.execution.ExecutionContext;
 import com.dtolabs.rundeck.core.execution.ExecutionException;
 import com.dtolabs.rundeck.core.execution.ExecutionListener;
-import com.dtolabs.rundeck.core.execution.dispatch.ParallelNodeDispatcher;
 import com.dtolabs.rundeck.core.execution.impl.common.AntSupport;
 import com.dtolabs.rundeck.core.execution.script.ExecTaskParameterGenerator;
 import com.dtolabs.rundeck.core.execution.script.ExecTaskParameterGeneratorImpl;
 import com.dtolabs.rundeck.core.execution.script.ExecTaskParameters;
 import com.dtolabs.rundeck.core.execution.service.NodeExecutor;
 import com.dtolabs.rundeck.core.execution.service.NodeExecutorResult;
+import com.dtolabs.rundeck.core.execution.service.NodeExecutorResultImpl;
+import com.dtolabs.rundeck.core.execution.workflow.steps.StepFailureReason;
+import com.dtolabs.rundeck.core.execution.workflow.steps.node.NodeStepFailureReason;
 import org.apache.tools.ant.BuildException;
 import org.apache.tools.ant.Project;
-import org.apache.tools.ant.Task;
 import org.apache.tools.ant.taskdefs.ExecTask;
-import org.apache.tools.ant.taskdefs.Sequential;
-import org.apache.tools.ant.types.Commandline;
 
 import java.util.Map;
 
@@ -61,8 +60,7 @@ public class LocalNodeExecutor implements NodeExecutor {
     }
 
     public NodeExecutorResult executeCommand(final ExecutionContext context, final String[] command,
-                                             final INodeEntry node) throws
-        ExecutionException {
+                                             final INodeEntry node)  {
         final ExecutionListener listener = context.getExecutionListener();
         final Project project = new Project();
         AntSupport.addAntBuildListener(listener, project);
@@ -72,8 +70,14 @@ public class LocalNodeExecutor implements NodeExecutor {
         boolean success = false;
         final ExecTask execTask;
         //perform jsch sssh command
-        execTask = buildExecTask(project, parameterGenerator.generate(node, true, null, command),
-            context.getDataContext());
+        try {
+            execTask = buildExecTask(project, parameterGenerator.generate(node, true, null, command),
+                context.getDataContext());
+        } catch (ExecutionException e) {
+            return NodeExecutorResultImpl.createFailure(StepFailureReason.ConfigurationFailure,
+                                                        e.getMessage(),
+                                                        node);
+        }
 
         execTask.setResultProperty(propName);
 
@@ -93,22 +97,12 @@ public class LocalNodeExecutor implements NodeExecutor {
             }
         }
         final boolean status = 0==result;
-        final int resultCode = result;
-        return new NodeExecutorResult() {
-            public int getResultCode() {
-                return resultCode;
-            }
-
-            public boolean isSuccess() {
-                return status;
-            }
-
-            @Override
-            public String toString() {
-                return "[local node exec] result was " + (isSuccess() ? "success" : "failure") + ", resultcode: "
-                       + getResultCode();
-            }
-        };
+        if(status) {
+            return NodeExecutorResultImpl.createSuccess(node);
+        }else {
+            return NodeExecutorResultImpl.createFailure(NodeStepFailureReason.NonZeroResultCode,
+                                                        "Result code was " + result, node, result);
+        }
     }
 
     private ExecTask buildExecTask(Project project, ExecTaskParameters taskParameters,
@@ -117,10 +111,15 @@ public class LocalNodeExecutor implements NodeExecutor {
         execTask.setTaskType("exec");
         execTask.setFailonerror(false);
         execTask.setProject(project);
-        final Commandline.Argument arg = execTask.createArg();
 
         execTask.setExecutable(taskParameters.getCommandexecutable());
-        arg.setLine(taskParameters.getCommandargline());
+        String[] commandargs = taskParameters.getCommandArgs();
+        if(null!=commandargs){
+            for (int i = 0; i < commandargs.length; i++) {
+                String commandarg = commandargs[i];
+                execTask.createArg().setValue(commandarg);
+            }
+        }
 
         //add Env elements to pass environment variables to the exec
 

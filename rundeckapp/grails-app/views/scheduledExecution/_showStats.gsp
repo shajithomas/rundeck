@@ -1,57 +1,47 @@
 <div class="jobstats" style="clear:both;">
-    <table width="200px">
-        <g:if test="${lastrun}">
-            <tr class="lastrun">
-                <td class="statlabel">
-                    Last run:
+    <table class="table table-bordered table-condensed" >
 
-                </td>
-                <td class="statvalue">
-                    by <span class="username">${lastrun.user}</span>,
-                    <span class="when">
-                        <g:relativeDate elapsed="${lastrun.dateCompleted}"/>
-                    </span>
-                </td>
-                <td style="width:12px">
-                    <g:link action="show" controller="execution" id="${lastrun.id}" title="View execution output"><img
-                        src="${resource(dir: 'images', file: 'icon-tiny-' + (lastrun?.status == 'true' ? 'ok' : 'warn') + '.png')}"
-                        alt="" width="12px" height="12px"/></g:link>
-                </td>
-            </tr>
-            <tr>
-                <td class="statlabel">
-                    Success rate:
-                </td>
-                <td class="statvalue">
-                    <g:formatNumber number="${successrate}" type="percent"/>
-                </td>
-            </tr>
-        </g:if>
-        <g:if test="${scheduledExecution.execCount>0}">
-            <tr>
-                <td class="statlabel">
-                    Average duration:
-
-                </td>
-                <td class="statvalue">
-                    <g:timeDuration time="${scheduledExecution.execCount>0?  scheduledExecution.totalTime /scheduledExecution.execCount  : 0}"/>
-
-                </td>
-            </tr>
-        </g:if>
         <tr>
-            <td class="statlabel">
-                Created:
-
-            </td>
-            <td class="statvalue">
-                <g:if test="${scheduledExecution.user}">
-                    by <span class="username">${scheduledExecution.user}</span>
-                </g:if>
-                <span class="when">
-                    <g:relativeDate elapsed="${scheduledExecution.dateCreated}"/>
+            <th style="width: 20%" class="text-muted text-center  text-header">
+                <g:message code="Execution.plural" />
+            </th>
+        <g:if test="${lastrun}">
+            <th style="width: 20%" class="text-muted text-center  text-header">
+                <g:message code="success.rate" />
+            </th>
+        </g:if>
+        <g:if test="${scheduledExecution.execCount > 0}">
+            <th style="width: 20%" class="text-muted text-center  text-header">
+                <g:message code="average.duration" />
+            </th>
+        </g:if>
+        </tr>
+        <tr>
+            <td class="text-center">
+                <span class="h3 ">
+                    <g:formatNumber number="${total}" />
                 </span>
             </td>
+        <g:if test="${lastrun}">
+            <g:set var="successrate" value="${params.float('success')?:successrate}"/>
+            <g:set var="ratecolors" value="${['text-success','text-muted','text-warning','text-danger']}"/>
+            <g:set var="ratelevels" value="${[0.9f,0.75f,0.5f]}"/>
+            <g:set var="successindex" value="${ratelevels.findIndexOf{it<=(successrate)}}"/>
+            <g:set var="successcolor" value="${successindex>=0?ratecolors[successindex]:ratecolors[-1]}"/>
+            <td class="text-center">
+                <span class="h3 ${successcolor}">
+                    <g:formatNumber number="${successrate}" type="percent"/>
+                </span>
+            </td>
+        </g:if>
+        <g:if test="${scheduledExecution.execCount>0}">
+            <td class="text-center">
+                    <span class="h3 ">
+                        <g:timeDuration time="${scheduledExecution.execCount>0?  scheduledExecution.totalTime /scheduledExecution.execCount  : 0}"/>
+                    </span>
+                </td>
+        </g:if>
+
         </tr>
     </table>
 </div>

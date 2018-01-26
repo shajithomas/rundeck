@@ -32,6 +32,7 @@ import com.dtolabs.rundeck.core.plugins.configuration.AbstractBaseDescription;
 import com.dtolabs.rundeck.core.plugins.configuration.Describable;
 import com.dtolabs.rundeck.core.plugins.configuration.Description;
 import com.dtolabs.rundeck.core.plugins.configuration.Property;
+import com.dtolabs.rundeck.plugins.util.DescriptionBuilder;
 
 import java.io.File;
 import java.io.InputStream;
@@ -48,7 +49,7 @@ public class ResourceYamlFormatParser implements ResourceFormatParser,Describabl
 
     public static final Set<String> EXTENSIONS = Collections.unmodifiableSet(new HashSet<String>(Arrays.asList("yaml","yml")));
     public static final Set<String> MIME_TYPES = Collections.unmodifiableSet(new HashSet<String>(Arrays.asList(
-        "*/yaml", "*/x-yaml")));
+        "*/yaml", "*/x-yaml", "text/plain")));
 
     public Set<String> getFileExtensions() {
         return EXTENSIONS;
@@ -78,20 +79,11 @@ public class ResourceYamlFormatParser implements ResourceFormatParser,Describabl
         return nodes;
     }
 
-    private static final Description DESCRIPTION = new AbstractBaseDescription() {
-        public String getName() {
-            return SERVICE_PROVIDER_TYPE;
-        }
-
-        public String getTitle() {
-            return "Resource YAML";
-        }
-
-        public String getDescription() {
-            return "The RunDeck Resource YAML format 1.3";
-        }
-
-    };
+    private static final Description DESCRIPTION = DescriptionBuilder.builder()
+        .name(SERVICE_PROVIDER_TYPE)
+        .title("Resource YAML")
+        .description("The Rundeck Resource YAML format 1.3 (bundled)")
+        .build();
 
     public Description getDescription() {
         return DESCRIPTION;

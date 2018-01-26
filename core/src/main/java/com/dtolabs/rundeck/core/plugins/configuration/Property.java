@@ -24,6 +24,7 @@
 package com.dtolabs.rundeck.core.plugins.configuration;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Property describes a configuration property of a provider
@@ -58,56 +59,57 @@ public interface Property {
         /**
          * A string input property with a select
          */
-        FreeSelect,
-//        MultiSelect,
-//        MultiFreeSelect
+        FreeSelect
     }
 
     /**
-     * Validator can validate a value
-     */
-    static interface Validator {
-        public boolean isValid(String value) throws ValidationException;
-    }
-
-    /**
-     * Return descriptive name of the property
+     * @return descriptive name of the property
      */
     public String getTitle();
 
     /**
-     * Return property key to use
+     * @return property key to use
      */
     public String getName();
 
     /**
-     * Return description of the values of the property
+     * @return description of the values of the property
      */
     public String getDescription();
 
     /**
-     * Return the property type
+     * @return the property type
      */
     public Type getType();
 
     /**
-     * Return the validator for this property
+     * @return the validator for this property
      */
-    public Validator getValidator();
+    public PropertyValidator getValidator();
 
     /**
-     * Return true if an empty value is not allowed
+     * @return true if an empty value is not allowed
      */
     public boolean isRequired();
 
     /**
-     * Return the default value of the property, or default select value to select
+     * @return the default value of the property, or default select value to select
      */
     public String getDefaultValue();
 
     /**
-     * Return a list of values for a select property
+     * @return a list of values for a select property
      */
     public List<String> getSelectValues();
 
+    /**
+     * @return the scope of this property, i.e. where the value can be retrieved and overridden, or null to indicate
+     * the default scope.
+     */
+    public PropertyScope getScope();
+    
+    /**
+     * @return a map of optional rendering options for the UI
+     */
+    public Map<String, Object> getRenderingOptions();
 }

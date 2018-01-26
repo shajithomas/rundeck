@@ -1,19 +1,16 @@
 <?xml version="1.0"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
-  <groupId>com.dtolabs.rundeck</groupId>
+  <groupId>org.rundeck</groupId>
   <artifactId>rundeck</artifactId>
   <packaging>war</packaging>
-  <version>1.4.4-dev</version>
-  
+  <version>2.6.8-SNAPSHOT</version>
   <name>RunDeck App</name>
   <description>RunDeck Command and Job Console</description>
   <url>http://rundeck.org</url>
-  
   <properties>
     <grails.version>1.3.7</grails.version>
   </properties>
-  
   <dependencies>
     <dependency>
       <groupId>org.grails</groupId>
@@ -50,7 +47,6 @@
         </exclusion>
       </exclusions>
     </dependency>
-    
     <dependency>
       <groupId>org.grails</groupId>
       <artifactId>grails-crud</artifactId>
@@ -90,7 +86,6 @@
         </exclusion>
       </exclusions>
     </dependency>
-    
     <dependency>
       <groupId>org.grails</groupId>
       <artifactId>grails-gorm</artifactId>
@@ -130,46 +125,40 @@
         </exclusion>
       </exclusions>
     </dependency>
-    
     <dependency>
       <groupId>org.grails</groupId>
       <artifactId>grails-test</artifactId>
       <version>${grails.version}</version>
       <scope>test</scope>
     </dependency>
-    
     <dependency>
       <groupId>javax.servlet</groupId>
       <artifactId>jstl</artifactId>
       <version>1.1.2</version>
     </dependency>
-    
     <dependency>
       <groupId>taglibs</groupId>
       <artifactId>standard</artifactId>
       <version>1.1.2</version>
     </dependency>
-    
     <!-- Grails defaults to Ehache for the second-level Hibernate cache. -->
     <dependency>
       <groupId>org.hibernate</groupId>
       <artifactId>hibernate-ehcache</artifactId>
       <version>3.3.1.GA</version>
-        <exclusions>
-          <!-- See http://www.slf4j.org/faq.html#IllegalAccessError -->
-          <exclusion>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-          </exclusion>
-          
-          <!-- We are pulling in ehcache-core below -->
-          <exclusion>
-            <groupId>net.sf.ehcache</groupId>
-            <artifactId>ehcache</artifactId>
-          </exclusion>
-        </exclusions>
+      <exclusions>
+        <!-- See http://www.slf4j.org/faq.html#IllegalAccessError -->
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-api</artifactId>
+        </exclusion>
+        <!-- We are pulling in ehcache-core below -->
+        <exclusion>
+          <groupId>net.sf.ehcache</groupId>
+          <artifactId>ehcache</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
-        
     <dependency>
       <groupId>net.sf.ehcache</groupId>
       <artifactId>ehcache-core</artifactId>
@@ -181,14 +170,12 @@
         </exclusion>
       </exclusions>
     </dependency>
-    
     <!-- For ease of development and testing, we include the HSQLDB database. -->
     <dependency>
       <groupId>hsqldb</groupId>
       <artifactId>hsqldb</artifactId>
       <version>1.8.0.10</version>
     </dependency>
-    
     <!-- Use Log4J for logging. This artifact also pulls in the Log4J JAR. -->
     <dependency>
       <groupId>org.slf4j</groupId>
@@ -202,41 +189,24 @@
       <version>1.5.2</version>
       <scope>compile</scope>
     </dependency>
-    
-    <!-- Needed in the case of AOP usage -->
-    <dependency>
-      <groupId>org.aspectj</groupId>
-      <artifactId>aspectjweaver</artifactId>
-      <version>1.6.8</version>
-    </dependency>
-    
-    <dependency>
-      <groupId>org.aspectj</groupId>
-      <artifactId>aspectjrt</artifactId>
-      <version>1.6.8</version>
-    </dependency>
-    
     <dependency>
       <groupId>commons-codec</groupId>
       <artifactId>commons-codec</artifactId>
       <version>1.5</version>
     </dependency>
-    
     <dependency>
       <groupId>commons-collections</groupId>
       <artifactId>commons-collections</artifactId>
-      <version>3.2.1</version>
+      <version>3.2.2</version>
     </dependency>
-    
     <dependency>
       <groupId>commons-pool</groupId>
       <artifactId>commons-pool</artifactId>
       <version>1.5.3</version>
     </dependency>
-
     <!-- include rundeck-core -->
     <dependency>
-      <groupId>com.dtolabs.rundeck</groupId>
+      <groupId>org.rundeck</groupId>
       <artifactId>rundeck-core</artifactId>
       <version>${project.version}</version>
       <!-- 
@@ -252,9 +222,17 @@
           <groupId>xerces</groupId>
           <artifactId>xmlParserAPIs</artifactId>
         </exclusion>
+        <exclusion>
+          <groupId>xalan</groupId>
+          <artifactId>xalan</artifactId>
+        </exclusion>
       </exclusions>
     </dependency>
-
+    <dependency>
+      <groupId>org.rundeck</groupId>
+      <artifactId>rundeck-jetty-server</artifactId>
+      <version>${project.version}</version>
+    </dependency>
     <!-- quartz dependency -->
     <dependency>
       <groupId>org.quartz-scheduler</groupId>
@@ -268,9 +246,7 @@
       <version>1.2.16</version>
       <scope>compile</scope>
     </dependency>
-
   </dependencies>
-  
   <dependencyManagement>
     <dependencies>
       <dependency>
@@ -281,13 +257,9 @@
       </dependency>
     </dependencies>
   </dependencyManagement>
-  
-  <repositories>
-  </repositories>
-  
+  <repositories/>
   <build>
     <pluginManagement/>
-    
     <plugins>
       <plugin>
         <groupId>org.grails</groupId>
@@ -309,18 +281,16 @@
           </execution>
         </executions>
       </plugin>
-      
       <plugin>
         <artifactId>maven-compiler-plugin</artifactId>
         <version>2.3.2</version>
         <configuration>
-          <source>1.6</source>
-          <target>1.6</target>
+          <source>1.7</source>
+          <target>1.7</target>
         </configuration>
       </plugin>
     </plugins>
   </build>
-  
   <profiles>
     <profile>
       <id>tools</id>

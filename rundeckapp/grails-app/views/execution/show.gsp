@@ -1,12 +1,14 @@
-<%@ page import="com.dtolabs.rundeck.server.authorization.AuthConstants" %>
+<%@ page import="grails.util.Environment; rundeck.Execution; com.dtolabs.rundeck.server.authorization.AuthConstants" %>
 <html>
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
-    <meta name="tabpage" content="jobs"/>
+    <meta name="tabpage" content="events"/>
     <meta name="layout" content="base" />
-    <title><g:message code="main.app.name"/> - <g:if test="${null==execution?.dateCompleted}">Now Running - </g:if><g:if test="${scheduledExecution}">${scheduledExecution?.jobName.encodeAsHTML()} :  </g:if><g:else>Transient <g:message code="domain.ScheduledExecution.title"/> : </g:else> Execution at <g:relativeDate atDate="${execution.dateStarted}" /> by ${execution.user}</title>
-    <g:set var="followmode" value="${params.mode in ['browse','tail','node']?params.mode:null==execution?.dateCompleted?'tail':'browse'}"/>
-      <g:set var="authKeys" value="${[AuthConstants.ACTION_KILL, AuthConstants.ACTION_READ,AuthConstants.ACTION_CREATE,AuthConstants.ACTION_RUN]}"/>
+    <title><g:appTitle/> - <g:if test="${null==execution?.dateCompleted}"><g:message
+            code="now.running" /> - </g:if><g:if test="${scheduledExecution}"><g:enc>${scheduledExecution?.jobName}</g:enc> :  </g:if><g:else><g:message code="execution.type.adhoc.title" /></g:else> <g:message code="execution.at.time.by.user" args="[g.relativeDateString(atDate:execution.dateStarted),execution.user]"/></title>
+    <g:set var="followmode" value="${params.mode in ['browse','tail','node']?params.mode:'tail'}"/>
+      <g:set var="authKeys" value="${[AuthConstants.ACTION_KILL,
+              AuthConstants.ACTION_READ,AuthConstants.ACTION_CREATE,AuthConstants.ACTION_RUN]}"/>
       <g:set var="authChecks" value="${[:]}"/>
       <g:each in="${authKeys}" var="actionName">
       <g:if test="${execution.scheduledExecution}">
@@ -17,416 +19,644 @@
       </g:if>
       <g:else>
           %{
-              authChecks[actionName] = auth.adhocAllowedTest(action: actionName)
+              authChecks[actionName] = auth.adhocAllowedTest(action: actionName,project:execution.project)
           }%
       </g:else>
       </g:each>
-      <g:set var="adhocRunAllowed" value="${auth.adhocAllowedTest(action: AuthConstants.ACTION_RUN)}"/>
+      <g:set var="adhocRunAllowed" value="${auth.adhocAllowedTest(action: AuthConstants.ACTION_RUN,project:execution.project)}"/>
 
       <g:set var="defaultLastLines" value="${grailsApplication.config.rundeck.gui.execution.tail.lines.default}"/>
       <g:set var="maxLastLines" value="${grailsApplication.config.rundeck.gui.execution.tail.lines.max}"/>
-      <g:javascript src="executionControl.js?v=${grailsApplication.metadata['app.version']}"/>
+      <asset:javascript src="workflow.js"/>
+      <g:javascript src="executionControl.js"/>
+      <g:javascript src="executionState.js"/>
+      <asset:javascript src="executionState_HistoryKO.js"/>
+
       <g:javascript library="prototype/effects"/>
+      <g:embedJSON id="workflowDataJSON" data="${execution.workflow.commands*.toMap()}"/>
+      <g:embedJSON id="nodeStepPluginsJSON" data="${stepPluginDescriptions.node.collectEntries { [(it.key): [title: it.value.title]] }}"/>
+      <g:embedJSON id="wfStepPluginsJSON" data="${stepPluginDescriptions.workflow.collectEntries { [(it.key): [title: it.value.title]] }}"/>
       <g:javascript>
-        <g:if test="${scheduledExecution}">
-        /** START history
-         *
-         */
-        function loadHistory(){
-            new Ajax.Updater('histcontent',"${createLink(controller:'reports',action:'eventsFragment')}",{
-                parameters:{compact:true,nofilters:true,jobIdFilter:'${scheduledExecution.id}'},
-                evalScripts:true,
-                onComplete: function(transport) {
-                    if (transport.request.success()) {
-                        Element.show('histcontent');
-                    }
+        var workflow=null;
+        var followControl=null;
+        var flowState=null;
+        var nodeflowvm=null;
+        function followOutput(){
+            followControl.beginFollowingOutput('${enc(js:execution?.id)}');
+        }
+        function followState(){
+            try{
+                flowState.beginFollowing();
+            }catch(e){
+                nodeflowvm.errorMessage('Could not load flow state: '+e);
+                nodeflowvm.stateLoaded(false);
+            }
+        }
+        function showTab(id){
+            jQuery('#'+id+' a').tab('show');
+        }
+
+        var activity;
+        function init() {
+            var workflowData=loadJsonData('workflowDataJSON');
+            workflow = new RDWorkflow(workflowData,{
+                nodeSteppluginDescriptions:loadJsonData('nodeStepPluginsJSON'),
+                wfSteppluginDescriptions:loadJsonData('wfStepPluginsJSON')
+              });
+
+          followControl = new FollowControl('${execution?.id}','outputappendform',{
+            parentElement:'commandPerform',
+            fileloadId:'fileload',
+            fileloadPctId:'fileloadpercent',
+            fileloadProgressId:'fileloadprogress',
+            viewoptionsCompleteId:'viewoptionscomplete',
+            cmdOutputErrorId:'cmdoutputerror',
+            outfileSizeId:'outfilesize',
+            workflow:workflow,
+            appLinks:appLinks,
+
+            extraParams:"<%="true" == params.disableMarkdown ? '&disableMarkdown=true' : ''%>&markdown=${enc(js:enc(url: params.markdown))}&ansicolor=${enc(js:enc(url: params.ansicolor))}",
+            lastlines: '${enc(js:params.int('lastlines') ?: defaultLastLines)}',
+            maxLastLines:'${enc(js:params.int('maxlines') ?: maxLastLines)}',
+            collapseCtx: {value:${enc(js:null == execution?.dateCompleted)},changed:false},
+            showFinalLine: {value:false,changed:false},
+            tailmode: ${enc(js:followmode == 'tail')},
+            browsemode: ${enc(js:followmode == 'browse')},
+            nodemode: ${enc(js:followmode == 'node')},
+            execData: {},
+            groupOutput:{value:${enc(js:followmode == 'browse')}},
+            updatepagetitle:${enc(js:null == execution?.dateCompleted)},
+          <g:if test="${authChecks[AuthConstants.ACTION_KILL]}">
+              killjobhtml: '<span class="btn btn-danger btn-sm textbtn" onclick="followControl.docancel();">Kill <g:message code="domain.ScheduledExecution.title"/> <i class="glyphicon glyphicon-remove"></i></span>',
+          </g:if>
+          <g:if test="${!authChecks[AuthConstants.ACTION_KILL]}">
+              killjobhtml: "",
+          </g:if>
+            totalDuration : '${enc(js:scheduledExecution?.totalTime ?: -1)}',
+            totalCount: '${enc(js:scheduledExecution?.execCount ?: -1)}'
+          });
+          nodeflowvm=new NodeFlowViewModel(
+            workflow,
+            "${enc(js:g.createLink(controller: 'execution', action: 'tailExecutionOutput', id: execution.id,params:[format:'json']))}",
+            "${enc(js:g.createLink(controller: 'execution', action: 'ajaxExecNodeState', id: execution.id))}"
+          );
+          flowState = new FlowState('${enc(js:execution?.id)}','flowstate',{
+            workflow:workflow,
+            loadUrl: "${enc(js:g.createLink(controller: 'execution', action: 'ajaxExecState', id: execution.id))}",
+            outputUrl:"${g.enc(js:createLink(controller: 'execution', action: 'tailExecutionOutput', id: execution.id,params:[format:'json']))}",
+            selectedOutputStatusId:'selectedoutputview',
+            reloadInterval:1500
+         });
+            flowState.addUpdater({
+            updateError:function(error,data){
+                nodeflowvm.stateLoaded(false);
+                if(error!='pending'){
+                    nodeflowvm.errorMessage(data.state.errorMessage?data.state.errorMessage:error);
+                }else{
+                    nodeflowvm.statusMessage(data.state.errorMessage?data.state.errorMessage:error);
+                }
+                ko.mapping.fromJS({
+                    executionState:data.executionState,
+                    executionStatusString:data.executionStatusString,
+                    retryExecutionId:data.retryExecutionId,
+                    retryExecutionUrl:data.retryExecutionUrl,
+                    retryExecutionState:data.retryExecutionState,
+                    retryExecutionAttempt:data.retryExecutionAttempt,
+                    retry:data.retry,
+                    completed:data.completed,
+                    execDuration:data.execDuration,
+                    jobAverageDuration:data.jobAverageDuration,
+                    startTime:data.startTime? data.startTime : data.state ? data.state.startTime: null,
+                    endTime:data.endTime ? data.endTime : data.state ? data.state.endTime : null
+                },{},nodeflowvm);
+            },
+            updateState:function(data){
+                ko.mapping.fromJS({
+                    executionState:data.executionState,
+                    executionStatusString:data.executionStatusString,
+                    retryExecutionId:data.retryExecutionId,
+                    retryExecutionUrl:data.retryExecutionUrl,
+                    retryExecutionState:data.retryExecutionState,
+                    retryExecutionAttempt:data.retryExecutionAttempt,
+                    retry:data.retry,
+                    completed:data.completed,
+                    execDuration:data.execDuration,
+                    jobAverageDuration:data.jobAverageDuration,
+                    startTime:data.startTime? data.startTime : data.state ? data.state.startTime: null,
+                    endTime:data.endTime ? data.endTime : data.state ? data.state.endTime : null
+                },{},nodeflowvm);
+                nodeflowvm.updateNodes(data.state);
+            }});
+            ko.mapping.fromJS({
+                completed:'${execution.dateCompleted!=null}',
+                startTime:'${enc(js:execution.dateStarted)}',
+                endTime:'${enc(js:execution.dateCompleted)}',
+                executionState:'${enc(js:execution.executionState)}',
+                executionStatusString:'${enc(js:execution.status)}'
+            },{},nodeflowvm);
+            ko.applyBindings(nodeflowvm,jQuery('#execution_main')[0]);
+            nodeflowvm.selectedNodes.subscribe(function (newValue) {
+                if (newValue) {
+                    flowState.loadUrlParams={nodes:newValue.join(",")};
+                }else{
+                    flowState.loadUrlParams=null;
                 }
             });
-        }
-        </g:if>
-        var followControl = new FollowControl('${execution?.id}','commandPerform',{
-            appLinks:appLinks,
-            iconUrl: "${resource(dir: 'images', file: 'icon')}",
-            extraParams:"<%="true" == params.disableMarkdown ? '&disableMarkdown=true' : ''%>",
-            lastlines: ${params.lastlines ? params.lastlines : defaultLastLines},
-            maxLastLines: ${maxLastLines},
-            collapseCtx: {value:${null == execution?.dateCompleted },changed:false},
-
-            tailmode: ${followmode == 'tail'},
-            browsemode: ${followmode == 'browse'},
-            nodemode: ${followmode == 'node'},
-            execData: {node:"${session.Framework.getFrameworkNodeHostname()}"},
-            <g:if test="${authChecks[AuthConstants.ACTION_KILL]}">
-            killjobhtml: '<span class="action button textbtn" onclick="followControl.docancel();">Kill <g:message code="domain.ScheduledExecution.title"/> <img src="${resource(dir: 'images', file: 'icon-tiny-removex.png')}" alt="Kill" width="12px" height="12px"/></span>',
-            </g:if>
-            <g:if test="${!authChecks[AuthConstants.ACTION_KILL]}">
-            killjobhtml: "",
-            </g:if>
-            totalDuration : 0 + ${scheduledExecution?.totalTime ? scheduledExecution.totalTime : -1},
-            totalCount: 0 + ${scheduledExecution?.execCount ? scheduledExecution.execCount : -1}
-            <g:if test="${scheduledExecution}">
-            , onComplete:loadHistory
-            </g:if>
-        });
-
-
-        function init() {
-            followControl.beginFollowingOutput('${execution?.id}');
-            $$('.obs_bubblepopup').each(function(e) {
-                new BubbleController(e,null,{offx:-14,offy:null}).startObserving();
+            //link flow and output tabs to initialize following
+            //by default show state
+            followState();
+            jQuery('#tab_link_summary').on('show.bs.tab',function(e){
+                nodeflowvm.activeTab("summary");
+                followState();
             });
+            jQuery('#tab_link_flow').on('show.bs.tab',function(e){
+                nodeflowvm.activeTab("flow");
+                followState();
+            });
+            jQuery('#tab_link_output').on('show.bs.tab',function(e){
+                nodeflowvm.activeTab("output");
+                followOutput();
+            });
+            if(document.getElementById('activity_section')){
+                activity = new History(appLinks.reportsEventsAjax, appLinks.menuNowrunningAjax);
+                activity.nowRunningEnabled(${null != execution?.dateCompleted});
+                //enable now running activity tab once execution completes
+                activity.highlightExecutionId("${execution.id}");
+                nodeflowvm.completed.subscribe(activity.nowRunningEnabled);
+                ko.applyBindings(activity, document.getElementById('activity_section'));
+                setupActivityLinks('activity_section', activity);
+           }
+            jQuery('.apply_ace').each(function () {
+                _applyAce(this);
+            });
+            followControl.bindActions('outputappendform');
         }
-
-        Event.observe(window, 'load', init);
-
+        jQuery(init);
       </g:javascript>
+
+      <g:if test="${grails.util.Environment.current==grails.util.Environment.DEVELOPMENT}">
+          <asset:javascript src="workflow.test.js"/>
+      </g:if>
       <style type="text/css">
 
         #log{
             margin-bottom:20px;
         }
+
+        .inline_only {
+            display: none;
+        }
+
+        .execstate.isnode[data-execstate=RUNNING],.execstate.isnode[data-execstate=RUNNING_HANDLER] {
+            background-image: url(${g.resource(dir: 'images',file: 'icon-tiny-disclosure-waiting.gif')});
+            padding-right: 16px;
+            background-repeat: no-repeat;
+            background-position: right 2px;
+        }
+
+
+
+        .errmsg {
+            color: gray;
+        }
       </style>
   </head>
 
-  <body>
-    <div class="pageTop extra">
-        <div class="jobHead">
-            <g:render template="/scheduledExecution/showHead" model="[scheduledExecution:scheduledExecution,execution:execution,followparams:[mode:followmode,lastlines:params.lastlines]]"/>
-        </div>
-        <div class="clear"></div>
-    </div>
-    <div class="pageBody">
+<g:set var="isAdhoc" value="${!scheduledExecution && execution.workflow.commands.size() == 1}"/>
+  <body id="executionShowPage">
+    <div id="execution_main">
+        <div class="executionshow_wrap" data-affix="wrap">
+        <div class="executionshow" data-affix="top" data-affix-padding-top="21">
+            <div class="row">
+                    %{--job or adhoc title--}%
+                    <div class="col-sm-6">
 
-        <table>
-            <tr>
-                <td>
+                                <g:if test="${scheduledExecution}">
+                                    <div class="row">
+                                        <g:render template="/scheduledExecution/showHead"
+                                              model="${[scheduledExecution: scheduledExecution, jobDescriptionMode:'hidden', jobActionButtons: true, hideJobDelete:true]}"/>
+                                    </div>
+                                </g:if>
+                                <g:if test="${execution.argString}">
+                                    <div class="row">
+                                        <div class="col-sm-12" >
+                                            <div class="argstring-scrollable">
+                                            <span class="text-muted"><g:message code="options.prompt"/></span>
+                                            <g:render template="/execution/execArgString" model="[argString:execution.argString]"/>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </g:if>
+                                <g:if test="${isAdhoc}">
+                                    <div class="row">
+                                        <div class="col-sm-12">
+                                            <g:render template="wfItemView" model="[
+                                                    item:execution.workflow.commands[0],
+                                                    icon:'icon-med',
+                                                    iwidth:'24px',
+                                                    iheight:'24px',
+                                            ]"/>
+                                        </div>
+                                    </div>
+                                </g:if>
 
-        <table class="executionInfo">
-            <tr>
-                <td>User:</td>
-                <td>${execution?.user}</td>
-            </tr>
-            <g:if test="${null!=execution.dateCompleted && null!=execution.dateStarted}">
+                            </div>
 
-                <tr>
-                    <td>Time:</td>
-                    <td><g:relativeDate start="${execution.dateStarted}" end="${execution.dateCompleted}" /></td>
-                </tr>
-            </g:if>
-            <g:if test="${null!=execution.dateStarted}">
-            <tr>
-                <td>Started:</td>
-                <td>
-                    <g:relativeDate elapsed="${execution.dateStarted}" agoClass="timeago"/>
-                </td>
-                <td><span class="timeabs">${execution.dateStarted}</span></td>
-            </tr>
-            </g:if>
-            <g:else>
-                <td>Started:</td>
-                <td>Just Now</td>
-            </g:else>
+                %{--permalink--}%
+                <div class="col-sm-6 ">
+                    <div class="container well inline well-sm">
+                        <div class="row">
+                            <div class="col-sm-4">
+                                <span class="jobInfo" id="jobInfo_${execution.id}">
+                                    <span class="h3">
+                                        <g:render template="/scheduledExecution/showExecutionLink"
+                                                  model="[scheduledExecution: scheduledExecution, noimgs: true, execution: execution, followparams: [mode: followmode, lastlines: params.lastlines]]"/></span>
+                                </span>
 
-        <g:if test="${null!=execution.dateCompleted}">
-                <tr>
-                    <td>Finished:</td>
-                    <td>
-                        <g:relativeDate elapsed="${execution.dateCompleted}" agoClass="timeago"/>
-                    </td>
-                    <td><span class="timeabs">${execution.dateCompleted}</span></td>
-                </tr>
-            </g:if>
-        </table>
+                                <g:if test="${execution.retryAttempt}">
+                                    <div class="text-muted">
+                                        <i class="glyphicon glyphicon-repeat"></i>
+                                        Retry #<g:enc>${execution.retryAttempt}</g:enc>  (of <g:enc>${execution.retry}</g:enc>)
+                                    </div>
+                                </g:if>
+                                <g:if test="${eprev || enext}">
+                                    <div class="">
 
-                </td>
-                <g:if test="${scheduledExecution}">
-                    <td style="vertical-align:top;" class="toolbar small">
-                        <g:render template="/scheduledExecution/actionButtons" model="${[scheduledExecution:scheduledExecution,objexists:objexists,jobAuthorized:jobAuthorized,execPage:true]}"/>
-                        <g:set var="lastrun" value="${scheduledExecution.id?Execution.findByScheduledExecutionAndDateCompletedIsNotNull(scheduledExecution,[max: 1, sort:'dateStarted', order:'desc']):null}"/>
-                        <g:set var="successcount" value="${scheduledExecution.id?Execution.countByScheduledExecutionAndStatus(scheduledExecution,'true'):0}"/>
-                        <g:set var="execCount" value="${scheduledExecution.id?Execution.countByScheduledExecution(scheduledExecution):0}"/>
-                        <g:set var="successrate" value="${execCount>0? (successcount/execCount) : 0}"/>
-                        <g:render template="/scheduledExecution/showStats" model="[scheduledExecution:scheduledExecution,lastrun:lastrun?lastrun:null, successrate:successrate]"/>
-                    </td>
-                </g:if>
-            </tr>
-        </table>
+                                        <ul class="pager pager-embed pager-left pager-sm">
+                                            <g:if test="${eprev}">
+                                                <li>
+                                                    <g:link action="show" controller="execution" id="${eprev.id}"
+                                                            params="[project: eprev.project]"
+                                                            title="Previous Execution #${eprev.id}">
+                                                        <i class="glyphicon glyphicon-arrow-left"></i>
+                                                        <g:message
+                                                                code="${scheduledExecution ? 'job' : 'adhoc'}.previous.execution"
+                                                                args="${[eprev.id]}"/>
+                                                    </g:link>
+                                                </li>
+                                            </g:if>
+                                            <g:else>
+                                                <li class="disabled">
+                                                    <span><g:message code="no.previous.executions"/></span>
+                                                </li>
+                                            </g:else>
+                                            <g:if test="${enext}">
+                                                <li>
+                                                    <g:link action="show" controller="execution"
+                                                            title="Next Execution #${enext.id}"
+                                                            params="[project: enext.project]"
+                                                            id="${enext.id}">
+                                                        <g:message
+                                                                code="${scheduledExecution ? 'job' : 'adhoc'}.next.execution"
+                                                                args="${[enext.id]}"/>
+                                                        <i class="glyphicon glyphicon-arrow-right"></i>
+                                                    </g:link>
+                                                </li>
+                                            </g:if>
+                                            <g:else>
+                                                <li class="disabled">
+                                                    <span><g:message code="no.more.executions"/></span>
+                                                </li>
+                                            </g:else>
+                                        </ul>
 
-        <g:expander key="schedExDetails${scheduledExecution?.id?scheduledExecution?.id:''}" imgfirst="true">Details</g:expander>
-        <div class="presentation" style="display:none" id="schedExDetails${scheduledExecution?.id}">
-            <g:render template="execDetails" model="[execdata:execution]"/>
+                                    </div>
+                                </g:if>
+                            </div>
 
-        </div>
-    </div>
+                %{--buttons--}%
+                            <div class="col-sm-8">
 
+                                <g:if test="${null == execution.dateCompleted}">
+                                    <g:if test="${authChecks[AuthConstants.ACTION_KILL]}">
+                                        <div class="pull-right">
+                                            <span id="cancelresult"
+                                                  data-bind="visible: !completed()">
+                                                <span class="btn btn-danger btn-sm"
+                                                      onclick="followControl.docancel();">
+                                                    <g:message code="button.action.kill.job" />
+                                                    <i class="glyphicon glyphicon-remove"></i>
+                                                </span>
+                                            </span>
+                                        </div>
+                                    </g:if>
+                                </g:if>
 
-    <div id="commandFlow" class="commandFlow">
-        <table width="100%">
-            <tr>
-                <td width="50%">
+                                %{--auth checks for delete execution--}%
+                                <g:set var="projAdminAuth" value="${auth.resourceAllowedTest(
+                                        context: 'application', type: 'project', name: params.project, action: AuthConstants.ACTION_ADMIN)}"/>
+                                <g:set var="deleteExecAuth"
+                                       value="${auth.resourceAllowedTest(context: 'application', type: 'project', name:
+                                               params.project, action: AuthConstants.ACTION_DELETE_EXECUTION) || projAdminAuth}"/>
 
-        <g:if test="${null!=execution.dateCompleted}">
+                                %{--adhoc buttons--}%
+                                <g:if test="${!scheduledExecution}">
+                                    <div class="pull-right">
+                                    <div class="btn-group">
+                                        %{--save as job link--}%
+                                        <g:if test="${auth.resourceAllowedTest(kind: 'job', action: [AuthConstants.ACTION_CREATE],project:execution.project)}">
+                                            <g:link
+                                                    controller="scheduledExecution"
+                                                    action="createFromExecution"
+                                                    params="${[executionId: execution.id,project:execution.project]}"
+                                                    class=" btn btn-primary btn-sm header execRerun execRetry"
+                                                    title="${g.message(code: 'execution.action.saveAsJob')}"
+                                                    style="${wdgt.styleVisible(if: null != execution.dateCompleted)}"
+                                                    data-bind="visible: completed()"
+                                            >
+                                                <g:message code="execution.action.saveAsJob"
+                                                           default="Save as Job"/>&hellip;
+                                            </g:link>
+                                        </g:if>
+                                        %{--run again links--}%
+                                        <g:if test="${adhocRunAllowed && g.executionMode(active:true)}">
+                                            %{--run again only--}%
+                                            <g:link
+                                                    controller="framework"
+                                                    action="adhoc"
+                                                    params="${[fromExecId: execution.id, project: execution.project]}"
+                                                    title="${g.message(code: 'execution.action.runAgain')}"
+                                                    class="btn btn-default btn-sm force-last-child execRerun"
+                                                    style="${wdgt.styleVisible(if: null != execution.dateCompleted && null == execution.failedNodeList)}"
+                                                    data-bind="visible: completed() && !failed()"
+                                            >
 
-                    Status:
-                    <span class="${execution.status=='true'?'succeed':'fail'}" >
-                        <g:if test="${execution.status=='true'}">
-                            Successful
-                        </g:if>
-                        <g:elseif test="${execution.cancelled}">
-                            Killed<g:if test="${execution.abortedby}"> by: ${execution.abortedby.encodeAsHTML()}</g:if>
-                        </g:elseif>
-                        <g:else>
-                            Failed
-                        </g:else>
-                    </span>
-            </g:if>
-            <g:else>
-                    Status:
+                                                <b class="glyphicon glyphicon-play"></b>
+                                                <g:message code="execution.action.runAgain"/>&hellip;
+                                            </g:link>
+                                                %{--run again and retry failed --}%
+                                            <div class="btn-group execRetry"
+                                                 style="${wdgt.styleVisible(if: null != execution.dateCompleted && null!=execution.failedNodeList )}"
+                                                 data-bind="visible: failed()"
+                                            >
+                                                <button class="btn btn-default btn-sm dropdown-toggle force-last-child" data-target="#"
+                                                        data-toggle="dropdown">
+                                                    <g:message code="execution.action.runAgain" />
+                                                    <i class="caret"></i>
+                                                </button>
+                                                <ul class="dropdown-menu pull-right" role="menu">
+                                                    <li >
+                                                            <g:link
+                                                                    controller="framework"
+                                                                    action="adhoc"
+                                                                    params="${[fromExecId: execution.id, project: execution.project]}"
+                                                                    title="${g.message(code: 'execution.action.runAgain')}">
 
-                        <span id="runstatus">
-                        <span class="nowrunning">
-                        <img src="${resource(dir:'images',file:'icon-tiny-disclosure-waiting.gif')}" alt="Spinner"/>
-                        Now Running&hellip;
-                        </span>
-                        </span>
+                                                                <b class="glyphicon glyphicon-play"></b>
+                                                                <g:message code="execution.action.runAgain"/>&hellip;
+                                                            </g:link>
+                                                    </li>
+                                                    <li class="divider  ">
 
-                    <g:if test="${authChecks[AuthConstants.ACTION_KILL]}">
-                        <span id="cancelresult" style="margin-left:10px">
-                            <span class="action button textbtn" onclick="followControl.docancel();">Kill <g:message code="domain.ScheduledExecution.title"/> <img src="${resource(dir:'images',file:'icon-tiny-removex.png')}" alt="Kill" width="12px" height="12px"/></span>
-                        </span>
-                    </g:if>
+                                                    </li>
+                                                    <li>
+                                                            <g:link
+                                                                    controller="framework"
+                                                                    action="adhoc"
+                                                                    params="${[retryFailedExecId: execution.id, project: execution.project]}"
+                                                                    title="${g.message(code: 'retry.failed.nodes.description')}">
 
-            </g:else>
+                                                                <b class="glyphicon glyphicon-play"></b>
+                                                                <g:message code="retry.failed.nodes"/>&hellip;
+                                                            </g:link>
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                        </g:if>
 
-                    <span id="execRetry" style="${wdgt.styleVisible(if:null!=execution.dateCompleted && null!=execution.failedNodeList)}; margin-right:10px;">
-                        <g:if test="${scheduledExecution}">
-                            <g:if test="${authChecks[AuthConstants.ACTION_RUN]}">
-                                <g:link controller="scheduledExecution" action="execute" id="${scheduledExecution.extid}" params="${[retryFailedExecId:execution.id]}" title="Run Job on the failed nodes" class="action button" style="margin-left:10px" >
-                                    <img src="${resource(dir:'images',file:'icon-small-run.png')}" alt="run" width="16px" height="16px"/>
-                                    Retry Failed Nodes  &hellip;
-                                </g:link>
-                            </g:if>
-                        </g:if>
-                        <g:else>
-                            <g:if test="${auth.resourceAllowedTest(kind: 'job', action: [AuthConstants.ACTION_CREATE]) || adhocRunAllowed}">
-                                <g:link controller="scheduledExecution" action="createFromExecution" params="${[executionId:execution.id,failedNodes:true]}" class="action button" title="Retry on the failed nodes&hellip;" style="margin-left:10px">
-                                    <img src="${resource(dir:'images',file:'icon-small-run.png')}"  alt="run" width="16px" height="16px"/>
-                                    Retry Failed Nodes &hellip;
-                                </g:link>
-                            </g:if>
-                        </g:else>
-                    </span>
-                    <span id="execRerun" style="${wdgt.styleVisible(if:null!=execution.dateCompleted)}" >
-                        <g:if test="${scheduledExecution}">
-                            <g:if test="${authChecks[AuthConstants.ACTION_RUN]}">
-                                &nbsp;
-                                <g:link controller="scheduledExecution"
-                                        action="execute"
-                                        id="${scheduledExecution.extid}"
-                                        params="${[retryExecId: execution.id]}"
-                                        class="action button"
-                                        title="Run this Job Again with the same options">
-                                    <g:img file="icon-small-run.png" alt="run" width="16px" height="16px"/>
-                                    Run Again &hellip;
-                                </g:link>
-                            </g:if>
-                        </g:if>
-                        <g:else>
-                        <g:if test="${auth.resourceAllowedTest(kind: 'job', action: [AuthConstants.ACTION_CREATE]) || adhocRunAllowed }">
-                        <g:if test="${!scheduledExecution || scheduledExecution && authChecks[AuthConstants.ACTION_READ]}">
-                            <g:link
-                                controller="scheduledExecution"
-                                action="createFromExecution"
-                                params="${[executionId:execution.id]}"
-                                class="action button"
-                                title="Save these Execution parameters as a Job, or run again..." >
-                                <g:img file="icon-small-run.png" alt="run" width="16px" height="16px"/>
-                                Run Again or Save &hellip;
-                            </g:link>
-                        </g:if>
-                        </g:if>
-                        </g:else>
-                    </span>
-                </td>
-                <td width="50%" >
-                    <div id="progressContainer" class="progressContainer" >
-                        <div class="progressBar" id="progressBar" title="Progress is an estimate based on average execution time for this ${g.message(code:'domain.ScheduledExecution.title')}.">0%</div>
+                                    </div>
+
+                                    <g:if test="${deleteExecAuth}">
+                                        <div class="spacing" data-bind="visible: completed()">
+                                            <a href="#execdelete" class="btn-link btn-sm btn btn-danger "
+                                               data-toggle="modal">
+                                                <b class="glyphicon glyphicon-remove-circle"></b>
+                                                <g:message code="button.action.delete.this.execution" />
+                                            </a>
+                                        </div>
+                                    </g:if>
+                                    </div>
+                                </g:if>
+                                <g:else>
+                                    %{--job buttons--}%
+                                    <div class="pull-right">
+
+                                        <g:if test="${authChecks[AuthConstants.ACTION_RUN] && g.executionMode(active:true)}">
+                                            %{--Run again link--}%
+                                            <g:link controller="scheduledExecution"
+                                                    action="execute"
+                                                    id="${scheduledExecution.extid}"
+                                                    class="btn btn-default btn-sm execRerun pull-right"
+                                                    params="${[retryExecId: execution.id, project: execution.project]}"
+                                                    title="${g.message(code: 'execution.job.action.runAgain')}"
+                                                    style="${wdgt.styleVisible(if: null != execution.dateCompleted && null == execution.failedNodeList)};"
+                                                    data-bind="visible: completed() && !failed()">
+                                                <b class="glyphicon glyphicon-play"></b>
+                                                <g:message code="execution.action.runAgain"/>&hellip;
+                                            </g:link>
+                                            %{--Run again and retry failed links in a dropdown --}%
+                                            <div class="btn-group execRetry"
+                                                 style="${wdgt.styleVisible(if: null != execution.dateCompleted && null != execution.failedNodeList)};"
+                                                 data-bind="visible: failed()">
+                                                <button class="btn btn-default btn-sm dropdown-toggle"
+                                                        data-target="#"
+                                                        data-toggle="dropdown">
+                                                    <g:message code="execution.action.runAgain" />
+                                                    <i class="caret"></i>
+                                                </button>
+                                                <ul class="dropdown-menu pull-right" role="menu">
+                                                    <li class="retrybuttons">
+                                                        <g:link controller="scheduledExecution"
+                                                                action="execute"
+                                                                id="${scheduledExecution.extid}"
+                                                                params="${[retryExecId: execution.id, project: execution.project]}"
+                                                                title="${g.message(code: 'execution.job.action.runAgain')}"
+                                                                data-bind="visible: completed()"
+                                                        >
+                                                            <b class="glyphicon glyphicon-play"></b>
+                                                            <g:message code="execution.action.runAgain"/>&hellip;
+                                                        </g:link>
+                                                    </li>
+                                                    <li class="divider">
+
+                                                    </li>
+                                                    <li class="retrybuttons">
+                                                        <g:link controller="scheduledExecution" action="execute"
+                                                                id="${scheduledExecution.extid}"
+                                                                params="${[retryFailedExecId: execution.id, project: execution.project]}"
+                                                                title="${g.message(code: 'retry.job.failed.nodes')}">
+                                                            <b class="glyphicon glyphicon-play"></b>
+                                                            <g:message code="retry.failed.nodes"/>&hellip;
+                                                        </g:link>
+                                                    </li>
+                                                </ul>
+                                            </div>
+
+                                        </g:if>
+
+                                        <g:if test="${deleteExecAuth}">
+                                            <div class="spacing" data-bind="visible: completed()">
+                                                <a href="#execdelete" class="btn-link btn-sm btn btn-danger "
+                                                   data-toggle="modal">
+                                                    <b class="glyphicon glyphicon-remove-circle"></b>
+                                                    <g:message code="button.action.delete.this.execution" />
+                                                </a>
+                                            </div>
+                                        </g:if>
+
+                                    </div>
+                                </g:else>
+                                %{--delete execution modal--}%
+                                <g:if test="${deleteExecAuth}">
+
+                                    <div class="modal" id="execdelete" tabindex="-1" role="dialog"
+                                         aria-labelledby="deleteexectitle" aria-hidden="true">
+                                        <div class="modal-dialog">
+                                            <div class="modal-content">
+                                                <div class="modal-header">
+                                                    <button type="button" class="close" data-dismiss="modal"
+                                                            aria-hidden="true">&times;</button>
+                                                    <h4 class="modal-title" id="deleteexectitle"><g:message code="delete.execution.title" /></h4>
+                                                </div>
+
+                                                <div class="modal-body">
+
+                                                    <p class=" "><g:message code="really.delete.this.execution" /></p>
+                                                </div>
+
+                                                <div class="modal-footer">
+                                                    <g:form controller="execution" action="delete" method="post" useToken="true">
+                                                        <g:hiddenField name="id" value="${execution.id}"/>
+                                                        <button type="submit" class="btn btn-default btn-sm "
+                                                                data-dismiss="modal">
+                                                            <g:message code="cancel" />
+                                                        </button>
+
+                                                        <input type="submit" value="${g.message(code:'button.action.Delete')}"
+                                                               class="btn btn-danger btn-sm"/>
+                                                    </g:form>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                </g:if>
+                                %{--/delete execution modal--}%
+
+                                %{--scroll up shown only when scroll affix happens--}%
+                                <div class="affixed-shown pull-right">
+                                    <a class="textbtn textbtn-default textbtn-on-hover btn-xs" href="#top">
+                                        <g:message code="scroll.to.top" />
+                                        <i class="glyphicon glyphicon-arrow-up"></i>
+                                    </a>
+                                </div>
+                            </div>
+
+                        </div>
+
+                    <div class="row">
+                        <div class="col-sm-12">
+                            <tmpl:wfstateSummaryLine/>
+                        </div>
                     </div>
-                </td>
-            </tr>
-        </table>
-    </div>
+                    </div>
+                </div>
+            </div>
 
-    <div id="commandPerformOpts" class="outputdisplayopts" style="margin: 0 20px;">
-        <form action="#" id="outputappendform">
+        <div >
 
-        <table width="100%">
-            <tr>
-                <td class="buttonholder" style="padding:10px;">
-                    <g:link class="tab ${followmode=='tail'?' selected':''}" style="padding:5px;"
-                        title="${g.message(code:'execution.show.mode.Tail.desc')}"
-                        controller="execution"  action="show" id="${execution.id}" params="${[lastlines:params.lastlines,mode:'tail'].findAll{it.value}}"><g:message code="execution.show.mode.Tail.title" default="Tail Output"/></g:link>
-                    <g:link class="tab ${followmode=='browse'?' selected':''}" style="padding:5px;"
-                        title="${g.message(code:'execution.show.mode.Annotated.desc')}"
-                        controller="execution"  action="show" id="${execution.id}" params="[mode:'browse']"><g:message code="execution.show.mode.Annotated.title" default="Annotated"/></g:link>
-                    <g:link class="tab ${followmode=='node'?' selected':''}" style="padding:5px;"
-                        title="${g.message(code:'execution.show.mode.Compact.desc')}"
-                        controller="execution"  action="show" id="${execution.id}" params="[mode:'node']"><g:message code="execution.show.mode.Compact.title" default="Compact"/></g:link>
-                    
-            <span id="fullviewopts" style="${followmode!='browse'?'display:none':''}">
-                    <input
-                        type="radio"
-                        name="outputappend"
-                        id="outputappendtop"
-                        value="top"
-                        style="display: none;"/>
-                    <label for="outputappendtop">
-                        <span
-                        class="action textbtn button"
-                        title="Click to change"
-                            id="appendTopLabel"
-                        onclick="followControl.setOutputAppendTop(true);"
-                        >Top</span></label>
-                    <input
-                        type="radio"
-                        name="outputappend"
-                        id="outputappendbottom"
-                        value="bottom"
-                        checked="CHECKED"
-                        style="display: none;"/>
-                    <label
-                        for="outputappendbottom">
-                        <span
-                            class="action textbtn button"
-                            title="Click to change"
-                            id="appendBottomLabel"
-                            onclick="followControl.setOutputAppendTop(false);"
-                        >Bottom</span></label>
-<%--
-            </td>
-            <td>--%>
-                <span class="action textbtn button"
-                      title="Click to change"
-                      id="ctxshowgroupoption"
-                      onclick="followControl.setGroupOutput($('ctxshowgroup').checked);">
-                <input
-                    type="checkbox"
-                    name="ctxshowgroup"
-                    id="ctxshowgroup"
-                    value="true"
-                    ${followmode=='tail'?'':'checked="CHECKED"'}
-                    style=""/>
-                    <label for="ctxshowgroup">Group commands</label>
-                </span>
-<%--
-                </td>
-
-            <td >--%>
-                &nbsp;
-                <span
-                    class="action textbtn button"
-                    title="Click to change"
-                    id="ctxcollapseLabel"
-                    onclick="followControl.setCollapseCtx($('ctxcollapse').checked);">
-                <input
-                    type="checkbox"
-                    name="ctxcollapse"
-                    id="ctxcollapse"
-                    value="true"
-                    ${followmode=='tail'?'':null==execution?.dateCompleted?'checked="CHECKED"':''}
-                    style=""/>
-                    <label for="ctxcollapse">Collapse</label>
-                </span>
-<%--
-            </td>
-            <td>--%>
-                &nbsp;
-                <span class="action textbtn button"
-                      title="Click to change"
-                      id="ctxshowlastlineoption"
-                      style="${wdgt.styleVisible(if: null == execution?.dateCompleted)}"
-                      onclick="followControl.setShowFinalLine($('ctxshowlastline').checked);">
-                <input
-                    type="checkbox"
-                    name="ctxshowlastline"
-                    id="ctxshowlastline"
-                    value="true"
-                    checked="CHECKED"
-                    style=""/>
-                    <label for="ctxshowlastline">Show final line</label>
-                </span>
-            </span>
-            <g:if test="${followmode=='tail'}">
-<%---
-                </td>
-                <td>--%>
-                    Show the last
-                    <span class="action textbtn button"
-                      title="Click to reduce"
-                      onmousedown="followControl.modifyLastlines(-5);return false;">-</span>
-                <input
-                    type="text"
-                    name="lastlines"
-                    id="lastlinesvalue"
-                    value="${params.lastlines?params.lastlines:defaultLastLines}"
-                    size="3"
-                    onchange="updateLastlines(this.value)"
-                    onkeypress="var x= noenter();if(!x){this.blur();};return x;"
-                    style=""/>
-                    <span class="action textbtn button"
-                      title="Click to increase"
-                      onmousedown="followControl.modifyLastlines(5);return false;">+</span>
-
-                    lines<span id="taildelaycontrol" style="${execution.dateCompleted?'display:none':''}">,
-                    and update every
-
-
-                    <span class="action textbtn button"
-                      title="Click to reduce"
-                      onmousedown="followControl.modifyTaildelay(-1);return false;">-</span>
-                <input
-                    type="text"
-                    name="taildelay"
-                    id="taildelayvalue"
-                    value="1"
-                    size="2"
-                    onchange="updateTaildelay(this.value)"
-                    onkeypress="var x= noenter();if(!x){this.blur();};return x;"
-                    style=""/>
-                    <span class="action textbtn button"
-                      title="Click to increase"
-                      onmousedown="followControl.modifyTaildelay(1);return false;">+</span>
-
-                    seconds
-                </span>
+            <g:if test="${execution.scheduledExecution}">
+            %{--progress bar--}%
+                <div class="row" data-bind="if: !completed()">
+                <div class="col-sm-12">
+                    <section class="runstatus " data-bind="if: !completed() && jobAverageDuration()>0">
+                        <g:set var="progressBind" value="${', css: { \'progress-bar-info\': jobPercentageFixed() < 105 ,  \'progress-bar-warning\': jobPercentageFixed() > 104  }'}"/>
+                        <g:render template="/common/progressBar"
+                                  model="[completePercent: execution.dateCompleted ? 100 : 0,
+                                          progressClass: 'rd-progress-exec progress-embed',
+                                          progressBarClass: '',
+                                          containerId: 'progressContainer2',
+                                          innerContent: '',
+                                          showpercent: true,
+                                          progressId: 'progressBar',
+                                          bind: 'jobPercentageFixed()',
+                                          bindText: '(jobPercentageFixed()  < 105 ? jobPercentageFixed() + \'%\' : \'+\' + jobOverrunDuration()) + \' of average \' + formatDurationHumanize(jobAverageDuration())',
+                                          progressBind: progressBind,
+                                  ]"/>
+                    </section>
+                </div>
+            </div>
             </g:if>
-                </td>
-                <td align="right">
-                    <span style="${execution.dateCompleted ? '' : 'display:none'}" class="sepL" id="viewoptionscomplete">
-                        <g:link class="action txtbtn" style="padding:5px;"
-                            title="Download entire output file" 
-                            controller="execution" action="downloadOutput" id="${execution.id}"><img src="${resource(dir:'images',file:'icon-small-file.png')}" alt="Download" title="Download output" width="13px" height="16px"/> Download <span id="outfilesize">${filesize?filesize+' bytes':''}</span></g:link>
-                    </span>
-                </td>
-            </tr>
-            </table>
-        </form>
+        </div>
+
+        </div>
+        </div>
+            <div class="row row-space clearfix">
+                <div class="col-sm-12">
+                    <g:render template="/common/messages"/>
+                    <ul class="nav nav-tabs">
+                        <li id="tab_link_summary" class="active">
+                            <a href="#summary" data-toggle="tab"><g:message code="execution.page.show.tab.Summary.title" /></a>
+                        </li>
+                        <li id="tab_link_flow">
+                            <a href="#state" data-toggle="tab" data-bind="text: completed()?'${enc(attr:g.message(code: "report"))}':'${enc(attr:g.message(code: "monitor"))}' ">
+                                <g:if test="${execution.dateCompleted==null}">
+                                    <g:message code="monitor" />
+                                </g:if>
+                                <g:else>
+                                    <g:message code="report" />
+                                </g:else>
+                            </a>
+                        </li>
+                        <li id="tab_link_output">
+                            <a href="#output" data-toggle="tab"><g:message code="execution.show.mode.Log.title" /></a>
+                        </li>
+                        <li>
+                            <a href="#schedExDetails${scheduledExecution?.id}" data-toggle="tab"><g:message code="definition" /></a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="tab-content">
+                <div class="tab-pane active" id="summary">
+                    <g:render template="wfstateSummaryDisplay" bean="${workflowState}" var="workflowState"/>
+                </div>
+                <div class="tab-pane" id="state">
+                    <div class="flowstate ansicolor ansicolor-on" id="nodeflowstate">
+                       <g:render template="wfstateNodeModelDisplay" bean="${workflowState}" var="workflowState"/>
+                    </div>
+                </div>
+                <div class="tab-pane " id="output">
+                    <g:render template="/execution/showFragment"
+                              model="[execution: execution, scheduledExecution: scheduledExecution, inlineView: false, followmode: followmode]"/>
+                </div>
+                <div class="tab-pane" id="schedExDetails${scheduledExecution?.id}">
+                    <div class="presentation" >
+                        <g:render template="execDetails"
+                                  model="[execdata: execution, showArgString: false, hideAdhoc: isAdhoc]"/>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    <div id="fileload2" style="display:none;" class="outputdisplayopts"><img src="${resource(dir:'images',file:'icon-tiny-disclosure-waiting.gif')}" alt="Spinner"/> Loading Output... <span id="fileloadpercent"></span></div>
-    <div
-        id="commandPerform"
-        style="display:none; margin: 0 20px; "></div>
-    <div id="fileload" style="display:none;" class="outputdisplayopts"><img src="${resource(dir:'images',file:'icon-tiny-disclosure-waiting.gif')}" alt="Spinner"/> Loading Output... <span id="fileload2percent"></span></div>
-    <div id="log"></div>
+    </div>
+
+
     <g:if test="${scheduledExecution}">
-        <div class="runbox">History</div>
-        <div class="pageBody">
-            <div id="histcontent"></div>
-            <g:javascript>
-                fireWhenReady('histcontent',loadHistory);
-            </g:javascript>
+        <div class="row row-space" id="activity_section">
+            <div class="col-sm-12 ">
+                <h4 class="text-muted "><g:message code="page.section.Activity.for.this.job"/></h4>
+                <g:render template="/reports/activityLinks" model="[hideNowRunning:!execution.dateCompleted,execution:execution,scheduledExecution: scheduledExecution, knockoutBinding: true]"/>
+            </div>
         </div>
     </g:if>
+
+  <!--[if (gt IE 8)|!(IE)]><!--> <g:javascript library="ace/ace"/><!--<![endif]-->
+
   </body>
 </html>
 

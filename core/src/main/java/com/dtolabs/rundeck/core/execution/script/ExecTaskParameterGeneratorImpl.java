@@ -17,10 +17,16 @@
 package com.dtolabs.rundeck.core.execution.script;
 
 import com.dtolabs.rundeck.core.common.INodeEntry;
+import com.dtolabs.rundeck.core.dispatcher.DataContextUtils;
 import com.dtolabs.rundeck.core.execution.ExecutionException;
 import com.dtolabs.rundeck.core.cli.CLIUtils;
+import com.dtolabs.rundeck.core.utils.Converter;
+import com.dtolabs.rundeck.core.utils.OptsUtil;
+import org.apache.commons.lang.StringUtils;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Arrays;
 
 /**
  * This class takes the input objects, and synthesizes the executable string and arguments string for the Ant Exec task
@@ -36,52 +42,50 @@ public class ExecTaskParameterGeneratorImpl implements ExecTaskParameterGenerato
     }
 
     /**
-     * Generate the {@link #commandexecutable} and {@link #commandargline} values.
      *
      * @throws ExecutionException if an error occurs
-     * @param nodeentry
-     * @param command
-     * @param scriptfile
-     * @param args
+     * @param nodeentry node
+     * @param command true if the args are a command
+     * @param scriptfile file to execute
+     * @param args command or scriptfile args
+     * @return parameters
      */
     public ExecTaskParameters generate(final INodeEntry nodeentry, final boolean command, final File scriptfile,
                                        final String[] args) throws ExecutionException {
         final String commandexecutable;
-        final String commandargline;
+        final String[] commandargs;
 
-        String commandString;
         if (!command && null == scriptfile) {
             throw new ExecutionException("Could not determine the command to dispatch");
         }
         if ("windows".equals(nodeentry.getOsFamily())) {
+            //TODO: escape args properly for windows
+            commandexecutable = "cmd.exe";
             if (command) {
-                commandString = CLIUtils.generateArgline(null, args);
+                ArrayList<String> list = new ArrayList<String>();
+                list.add(0, "/c");
+                list.addAll(Arrays.asList(args));
+                commandargs = list.toArray(new String[list.size()]);
             } else if (null != scriptfile) {
                 //commandString is the script file location
-                commandString = CLIUtils.generateArgline(scriptfile.getAbsolutePath(), args);
+                ArrayList<String> list = new ArrayList<String>();
+                list.add(scriptfile.getAbsolutePath());
+                if(args!=null && args.length>0){
+                    list.addAll(Arrays.asList(args));
+                }
+                list.add(0,"/c");
+                commandargs = list.toArray(new String[list.size()]);
             } else {
                 throw new ExecutionException("Could not determine the command to dispatch");
             }
-            commandexecutable = "cmd.exe";
-            String argline;
-            if (commandString.indexOf("\"") >= 0) {
-                argline = "/c " + commandString;
-            } else if (commandString.indexOf(" ") >= 0) {
-                argline = "/c " + "\"" + commandString + "\"";
-            } else {
-                argline = "/c " + commandString;
-            }
-            commandargline = argline;
         } else {
             if (command) {
                 commandexecutable = "/bin/sh";
-                commandString = CLIUtils.generateArgline(null, args);
-                commandargline = "-c " + (commandString.contains("\"") ? "'" + commandString + "'"
-                                                                       : "\"" + commandString + "\"");
+                commandargs = new String[]{"-c", StringUtils.join(args, " ")};
             } else if (null != scriptfile) {
                 final String scriptPath = scriptfile.getAbsolutePath();
                 commandexecutable = scriptPath;
-                commandargline = CLIUtils.generateArgline(null, args);
+                commandargs=args;
             } else {
                 throw new ExecutionException("Could not determine the command to dispatch");
             }
@@ -91,8 +95,8 @@ public class ExecTaskParameterGeneratorImpl implements ExecTaskParameterGenerato
                 return commandexecutable;
             }
 
-            public String getCommandargline() {
-                return commandargline;
+            public String[] getCommandArgs() {
+                return commandargs;
             }
         };
     }

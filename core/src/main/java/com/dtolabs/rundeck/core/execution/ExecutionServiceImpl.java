@@ -23,26 +23,27 @@
 */
 package com.dtolabs.rundeck.core.execution;
 
+import com.dtolabs.rundeck.core.CoreException;
 import com.dtolabs.rundeck.core.cli.ExecTool;
 import com.dtolabs.rundeck.core.common.Framework;
 import com.dtolabs.rundeck.core.common.INodeEntry;
 import com.dtolabs.rundeck.core.dispatcher.DataContextUtils;
-import com.dtolabs.rundeck.core.execution.commands.CommandInterpreter;
-import com.dtolabs.rundeck.core.execution.commands.InterpreterException;
-import com.dtolabs.rundeck.core.execution.commands.InterpreterResult;
 import com.dtolabs.rundeck.core.execution.dispatch.Dispatchable;
 import com.dtolabs.rundeck.core.execution.dispatch.DispatcherException;
 import com.dtolabs.rundeck.core.execution.dispatch.DispatcherResult;
 import com.dtolabs.rundeck.core.execution.dispatch.NodeDispatcher;
 import com.dtolabs.rundeck.core.execution.service.*;
-import com.dtolabs.rundeck.core.utils.FormattedOutputStream;
-import com.dtolabs.rundeck.core.utils.LogReformatter;
-import com.dtolabs.rundeck.core.utils.MapGenerator;
-import com.dtolabs.rundeck.core.utils.ThreadBoundOutputStream;
+import com.dtolabs.rundeck.core.execution.workflow.StepExecutionContext;
+import com.dtolabs.rundeck.core.execution.workflow.WorkflowExecutionListener;
+import com.dtolabs.rundeck.core.execution.workflow.steps.*;
+import com.dtolabs.rundeck.core.execution.workflow.steps.node.*;
+import com.dtolabs.rundeck.core.utils.*;
+import org.apache.commons.collections.Predicate;
 
 import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -58,14 +59,30 @@ class ExecutionServiceImpl implements ExecutionService {
         this.framework = framework;
     }
 
-    public ExecutionResult executeItem(ExecutionContext context, ExecutionItem item) throws ExecutionException {
-        if (null != context.getExecutionListener()) {
-            context.getExecutionListener().beginExecution(context, item);
+    protected WorkflowExecutionListener getWorkflowListener(final ExecutionContext executionContext) {
+        WorkflowExecutionListener wlistener = null;
+        final ExecutionListener elistener = executionContext.getExecutionListener();
+        if (null != elistener && elistener instanceof WorkflowExecutionListener) {
+            wlistener = (WorkflowExecutionListener) elistener;
         }
+        return wlistener;
+    }
+    public ExecutionResult executeItem(StepExecutionContext context, StepExecutionItem executionItem)
+        throws ExecutionException, ExecutionServiceException {
+        if (null != getWorkflowListener(context)) {
+            getWorkflowListener(context).beginStepExecution(null,context, executionItem);
+        }
+        if (!(executionItem instanceof NodeStepExecutionItem)) {
+            throw new IllegalArgumentException("Cannot dispatch item which is not a NodeStepExecutionItem: " +
+                    executionItem);
+        }
+        NodeStepExecutionItem item = (NodeStepExecutionItem) executionItem;
 
         boolean success = false;
         DispatcherResult result = null;
         BaseExecutionResult baseExecutionResult = null;
+        final LogReformatter formatter = createLogReformatter(null, context.getExecutionListener());
+        final ThreadStreamFormatter loggingReformatter = new ThreadStreamFormatter(formatter).invoke();
         try {
             result = dispatchToNodes(context, item);
             success = result.isSuccess();
@@ -73,50 +90,88 @@ class ExecutionServiceImpl implements ExecutionService {
         } catch (DispatcherException e) {
             baseExecutionResult = new BaseExecutionResult(result, success, e);
         } finally {
-            if (null != context.getExecutionListener()) {
-                context.getExecutionListener().finishExecution(baseExecutionResult, context, item);
+            loggingReformatter.resetOutputStreams();
+            if (null != getWorkflowListener(context)) {
+                getWorkflowListener(context).finishStepExecution(null,baseExecutionResult, context, item);
             }
         }
 
         return baseExecutionResult;
     }
 
-    public InterpreterResult interpretCommand(ExecutionContext context,
-                                              ExecutionItem item, INodeEntry node) throws InterpreterException {
+    public StepExecutionResult executeStep(StepExecutionContext context, StepExecutionItem item) throws StepException {
 
-        final CommandInterpreter interpreter;
+        final StepExecutor executor;
         try {
-            interpreter = framework.getCommandInterpreterForItem(item);
+            executor = framework.getStepExecutionService().getExecutorForItem(item);
         } catch (ExecutionServiceException e) {
-            throw new InterpreterException(e);
+            return new StepExecutionResultImpl(e, ServiceFailureReason.ServiceFailure, e.getMessage());
         }
 
-        if (null != context.getExecutionListener()) {
-            context.getExecutionListener().beginInterpretCommand(context, item, node);
-        }
-        InterpreterResult result = null;
+        StepExecutionResult result = null;
         try {
-            result = interpreter.interpretCommand(context, item, node);
+            if (null != getWorkflowListener(context)) {
+                getWorkflowListener(context).beginStepExecution(executor, context, item);
+            }
+            result = executor.executeWorkflowStep(context, item);
         } finally {
-            if (null != context.getExecutionListener()) {
-                context.getExecutionListener().finishInterpretCommand(result, context, item, node);
+            if (null != getWorkflowListener(context)) {
+                getWorkflowListener(context).finishStepExecution(executor,result, context, item);
             }
         }
         return result;
     }
 
-    public DispatcherResult dispatchToNodes(ExecutionContext context, ExecutionItem item) throws
-        DispatcherException {
+    static enum ServiceFailureReason implements FailureReason{
+        ServiceFailure
+    }
+
+    public NodeStepResult executeNodeStep(StepExecutionContext context,
+                                          NodeStepExecutionItem item, INodeEntry node) throws NodeStepException {
+
+        final NodeStepExecutor interpreter;
+        try {
+            interpreter = framework.getNodeStepExecutorForItem(item);
+        } catch (ExecutionServiceException e) {
+            throw new NodeStepException(e, ServiceFailureReason.ServiceFailure, node.getNodename());
+        }
+
+        if (null != getWorkflowListener(context)) {
+            getWorkflowListener(context).beginExecuteNodeStep(context, item, node);
+        }
+        //create node context for node and substitute data references in command
+
+        NodeStepResult result = null;
+        try {
+            final ExecutionContextImpl nodeContext = new ExecutionContextImpl.Builder(context)
+                    .singleNodeContext(node, true)
+                    .build();
+            result = interpreter.executeNodeStep(nodeContext, item, node);
+            if (!result.isSuccess()) {
+                context.getExecutionListener().log(0, "Failed: " + result.toString());
+            }
+        } catch (NodeStepException e) {
+            result = new NodeStepResultImpl(e, e.getFailureReason(), e.getMessage(), node);
+            throw e;
+        }catch (Throwable t) {
+            result = new NodeStepResultImpl(t, StepFailureReason.Unknown, t.getMessage(), node);
+            throw new NodeStepException(t, StepFailureReason.Unknown, node.getNodename());
+        } finally {
+            if (null != getWorkflowListener(context)) {
+                getWorkflowListener(context).finishExecuteNodeStep(result, context, item, node);
+            }
+        }
+        return result;
+    }
+
+    public DispatcherResult dispatchToNodes(StepExecutionContext context, NodeStepExecutionItem item) throws
+                                                                                                      DispatcherException,
+                                                                                                      ExecutionServiceException {
 
         if (null != context.getExecutionListener()) {
             context.getExecutionListener().beginNodeDispatch(context, item);
         }
-        final NodeDispatcher dispatcher;
-        try {
-            dispatcher = framework.getNodeDispatcherForContext(context);
-        } catch (ExecutionServiceException e) {
-            throw new DispatcherException(e);
-        }
+        final NodeDispatcher dispatcher = framework.getNodeDispatcherForContext(context);
         DispatcherResult result = null;
         try {
             result = dispatcher.dispatch(context, item);
@@ -128,18 +183,14 @@ class ExecutionServiceImpl implements ExecutionService {
         return result;
     }
 
-    public DispatcherResult dispatchToNodes(ExecutionContext context, Dispatchable item) throws
-        DispatcherException {
+    public DispatcherResult dispatchToNodes(StepExecutionContext context, Dispatchable item) throws
+                                                                                             DispatcherException,
+                                                                                             ExecutionServiceException {
 
         if (null != context.getExecutionListener()) {
             context.getExecutionListener().beginNodeDispatch(context, item);
         }
-        final NodeDispatcher dispatcher;
-        try {
-            dispatcher = framework.getNodeDispatcherForContext(context);
-        } catch (ExecutionServiceException e) {
-            throw new DispatcherException(e);
-        }
+        final NodeDispatcher dispatcher = framework.getNodeDispatcherForContext(context);
         DispatcherResult result = null;
         try {
             result = dispatcher.dispatch(context, item);
@@ -153,6 +204,12 @@ class ExecutionServiceImpl implements ExecutionService {
 
     public String fileCopyFileStream(ExecutionContext context, InputStream input, INodeEntry node) throws
         FileCopierException {
+        return fileCopyFileStream(context, input, node, null);
+    }
+
+    public String fileCopyFileStream(ExecutionContext context, InputStream input, INodeEntry node,
+            String destinationPath) throws
+            FileCopierException {
 
 
         if (null != context.getExecutionListener()) {
@@ -162,15 +219,17 @@ class ExecutionServiceImpl implements ExecutionService {
         try {
             copier = framework.getFileCopierForNodeAndProject(node, context.getFrameworkProject());
         } catch (ExecutionServiceException e) {
-            throw new FileCopierException(e);
+            throw new FileCopierException(e.getMessage(), ServiceFailureReason.ServiceFailure, e);
         }
-        final LogReformatter formatter = createLogReformatter(node, context.getExecutionListener());
-        final ThreadStreamFormatter loggingReformatter = new ThreadStreamFormatter(formatter).invoke();
         String result = null;
         try {
-            result = copier.copyFileStream(context, input, node);
+            if (null != destinationPath && copier instanceof DestinationFileCopier) {
+                DestinationFileCopier dcopier = (DestinationFileCopier) copier;
+                result = dcopier.copyFileStream(context, input, node, destinationPath);
+            } else {
+                result = copier.copyFileStream(context, input, node);
+            }
         } finally {
-            loggingReformatter.resetOutputStreams();
             if (null != context.getExecutionListener()) {
                 context.getExecutionListener().finishFileCopy(result, context, node);
             }
@@ -180,6 +239,12 @@ class ExecutionServiceImpl implements ExecutionService {
 
     public String fileCopyFile(ExecutionContext context, File file,
                                INodeEntry node) throws FileCopierException {
+        return fileCopyFile(context, file, node, null);
+    }
+
+    public String fileCopyFile(ExecutionContext context, File file, INodeEntry node,
+            String destinationPath) throws FileCopierException {
+
         if (null != context.getExecutionListener()) {
             context.getExecutionListener().beginFileCopyFile(context, file, node);
         }
@@ -187,15 +252,17 @@ class ExecutionServiceImpl implements ExecutionService {
         try {
             copier = framework.getFileCopierForNodeAndProject(node, context.getFrameworkProject());
         } catch (ExecutionServiceException e) {
-            throw new FileCopierException(e);
+            throw new FileCopierException(e.getMessage(), ServiceFailureReason.ServiceFailure, e);
         }
-        final LogReformatter formatter = createLogReformatter(node, context.getExecutionListener());
-        final ThreadStreamFormatter loggingReformatter = new ThreadStreamFormatter(formatter).invoke();
         String result = null;
         try {
-            result = copier.copyFile(context, file, node);
+            if (null != destinationPath && copier instanceof DestinationFileCopier) {
+                DestinationFileCopier dcopier = (DestinationFileCopier) copier;
+                result = dcopier.copyFile(context, file, node, destinationPath);
+            }else{
+                result = copier.copyFile(context, file, node);
+            }
         } finally {
-            loggingReformatter.resetOutputStreams();
             if (null != context.getExecutionListener()) {
                 context.getExecutionListener().finishFileCopy(result, context, node);
             }
@@ -204,7 +271,12 @@ class ExecutionServiceImpl implements ExecutionService {
     }
 
     public String fileCopyScriptContent(ExecutionContext context, String script,
-                                        INodeEntry node) throws FileCopierException {
+            INodeEntry node) throws FileCopierException {
+        return fileCopyScriptContent(context,script,node,null);
+    }
+
+    public String fileCopyScriptContent(ExecutionContext context, String script, INodeEntry node, String
+            destinationPath) throws FileCopierException {
         if (null != context.getExecutionListener()) {
             context.getExecutionListener().beginFileCopyScriptContent(context, script, node);
         }
@@ -212,15 +284,17 @@ class ExecutionServiceImpl implements ExecutionService {
         try {
             copier = framework.getFileCopierForNodeAndProject(node, context.getFrameworkProject());
         } catch (ExecutionServiceException e) {
-            throw new FileCopierException(e);
+            throw new FileCopierException(e.getMessage(), ServiceFailureReason.ServiceFailure, e);
         }
-        final LogReformatter formatter = createLogReformatter(node, context.getExecutionListener());
-        final ThreadStreamFormatter loggingReformatter = new ThreadStreamFormatter(formatter).invoke();
         String result = null;
         try {
-            result = copier.copyScriptContent(context, script, node);
+            if (null != destinationPath && copier instanceof DestinationFileCopier) {
+                DestinationFileCopier dcopier = (DestinationFileCopier) copier;
+                result = dcopier.copyScriptContent(context, script, node, destinationPath);
+            }else{
+                result = copier.copyScriptContent(context, script, node);
+            }
         } finally {
-            loggingReformatter.resetOutputStreams();
             if (null != context.getExecutionListener()) {
                 context.getExecutionListener().finishFileCopy(result, context, node);
             }
@@ -229,34 +303,37 @@ class ExecutionServiceImpl implements ExecutionService {
     }
 
     public NodeExecutorResult executeCommand(final ExecutionContext context, final String[] command,
-                                             final INodeEntry node) throws ExecutionException {
+                                             final INodeEntry node) {
+        return executeCommand(context, ExecArgList.fromStrings(DataContextUtils
+                .stringContainsPropertyReferencePredicate, command), node);
+    }
+
+    public NodeExecutorResult executeCommand(final ExecutionContext context, final ExecArgList command,
+                                             final INodeEntry node) {
 
         if (null != context.getExecutionListener()) {
-            context.getExecutionListener().beginNodeExecution(context, command, node);
+            context.getExecutionListener().beginNodeExecution(context, command.asFlatStringArray(), node);
         }
         final NodeExecutor nodeExecutor;
         try {
             nodeExecutor = framework.getNodeExecutorForNodeAndProject(node, context.getFrameworkProject());
         } catch (ExecutionServiceException e) {
-            throw new ExecutionException(e);
+            throw new CoreException(e);
         }
 
         //create node context for node and substitute data references in command
-        final Map<String, Map<String, String>> nodeDataContext =
-            DataContextUtils.addContext("node", DataContextUtils.nodeData(node), context.getDataContext());
-        final String[] nodeCommand = DataContextUtils.replaceDataReferences(command, nodeDataContext);
+        final ExecutionContextImpl nodeContext = new ExecutionContextImpl.Builder(context).nodeContextData(node).build();
 
-        final LogReformatter formatter = createLogReformatter(node, context.getExecutionListener());
-        final ThreadStreamFormatter loggingReformatter = new ThreadStreamFormatter(formatter).invoke();
+        final ArrayList<String> commandList = command.buildCommandForNode(nodeContext.getDataContext(),
+                node.getOsFamily());
+
         NodeExecutorResult result = null;
+        String[] commandArray = commandList.toArray(new String[commandList.size()]);
         try {
-            final ExecutionContextImpl nodeContext = new ExecutionContextImpl.Builder(context).dataContext(
-                nodeDataContext).build();
-            result = nodeExecutor.executeCommand(nodeContext, nodeCommand, node);
+            result = nodeExecutor.executeCommand(nodeContext, commandArray, node);
         } finally {
-            loggingReformatter.resetOutputStreams();
             if (null != context.getExecutionListener()) {
-                context.getExecutionListener().finishNodeExecution(result, context, command, node);
+                context.getExecutionListener().finishNodeExecution(result, context, commandArray, node);
             }
         }
         return result;
@@ -266,6 +343,9 @@ class ExecutionServiceImpl implements ExecutionService {
         return SERVICE_NAME;
     }
 
+    /**
+     * @deprecated
+     */
     private static class ContextLoggerExecutionListenerMapGenerator implements MapGenerator<String,String>{
         final ContextLoggerExecutionListener ctxListener;
 
@@ -277,6 +357,11 @@ class ExecutionServiceImpl implements ExecutionService {
             return ctxListener.getLoggingContext();
         }
     }
+    /**
+     * Create a LogReformatter for the specified node and listener. If the listener is a {@link ContextLoggerExecutionListener},
+     * then the context map data is used by the reformatter.
+     * @deprecated
+     */
     public static LogReformatter createLogReformatter(final INodeEntry node, final ExecutionListener listener) {
         LogReformatter gen;
         if (null != listener && listener.isTerse()) {
@@ -292,8 +377,8 @@ class ExecutionServiceImpl implements ExecutionService {
             } else {
                 final HashMap<String, String> baseContext = new HashMap<String, String>();
                 //discover node name and username
-                baseContext.put("node", node.getNodename());
-                baseContext.put("user", node.extractUserName());
+                baseContext.put("node", null != node?node.getNodename():"");
+                baseContext.put("user", null != node?node.extractUserName():"");
                 gen = new LogReformatter(logformat, baseContext);
             }
 
@@ -301,6 +386,9 @@ class ExecutionServiceImpl implements ExecutionService {
         return gen;
     }
 
+    /**
+     * @deprecated
+     */
     static class ThreadStreamFormatter {
         final LogReformatter gen;
         private ThreadBoundOutputStream threadBoundSysOut;

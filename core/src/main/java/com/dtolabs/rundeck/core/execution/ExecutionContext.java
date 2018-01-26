@@ -23,8 +23,14 @@
 */
 package com.dtolabs.rundeck.core.execution;
 
+import com.dtolabs.rundeck.core.authorization.AuthContext;
 import com.dtolabs.rundeck.core.common.Framework;
+import com.dtolabs.rundeck.core.common.INodeSet;
 import com.dtolabs.rundeck.core.common.NodesSelector;
+import com.dtolabs.rundeck.core.jobs.JobService;
+import com.dtolabs.rundeck.core.common.OrchestratorConfig;
+import com.dtolabs.rundeck.core.storage.StorageTree;
+import com.dtolabs.rundeck.plugins.orchestrator.OrchestratorPlugin;
 
 import java.io.File;
 import java.util.Map;
@@ -44,12 +50,25 @@ public interface ExecutionContext {
     public String getFrameworkProject();
 
     /**
-     * Get the framework
+     * @return the framework
      */
     public Framework getFramework();
 
     /**
-     * username
+     * @return the authorization context
+     */
+    public AuthContext getAuthContext();
+    /**
+     * @return the storage service
+     */
+    public StorageTree getStorageTree();
+    /**
+     * @return the job service
+     */
+    public JobService getJobService();
+
+    /**
+     * @return username
      */
     public String getUser();
 
@@ -60,31 +79,30 @@ public interface ExecutionContext {
      */
     NodesSelector getNodeSelector();
     /**
-     * Return node dispatch threadcount
+     * Return the node selector
+     *
+     * @return nodeset
+     */
+    INodeSet getNodes();
+    /**
+     * @return node dispatch threadcount
      */
     int getThreadCount();
 
     /**
-     * Return the node rank attribute to use for ranking
+     * @return the node rank attribute to use for ranking
      */
     public String getNodeRankAttribute();
 
     /**
-     * Return true if the node rank order is ascending
+     * @return true if the node rank order is ascending
      */
     public boolean isNodeRankOrderAscending();
 
     /**
-     * return node dispatch keepgoing
+     * @return node dispatch keepgoing
      */
     boolean isKeepgoing();
-
-    /**
-     * Get the argument line definition
-     *
-     * @return the arg
-     */
-    String[] getArgs();
 
     /**
      * Return the loglevel value, using the Ant equivalents: DEBUG=1,
@@ -101,14 +119,16 @@ public interface ExecutionContext {
     public Map<String, Map<String, String>> getDataContext();
 
     /**
-     * Return the data context in the private scope
+     * @return the data context in the private scope
      */
     public Map<String, Map<String, String>> getPrivateDataContext();
 
     public ExecutionListener getExecutionListener();
 
     /**
-     * Specific file to use for nodes source instead of project nodes
+     * @return Specific file to use for nodes source instead of project nodes
      */
     public File getNodesFile();
+
+	public OrchestratorConfig getOrchestrator();
 }

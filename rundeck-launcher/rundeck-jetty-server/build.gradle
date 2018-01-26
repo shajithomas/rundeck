@@ -1,15 +1,30 @@
+/**
+ * The Rundeck Jetty server build file
+ */
+
+description = 'This is the embedded Jetty server project'
 
 archivesBaseName = 'rundeck-jetty-server'
+
+// set the convention to rundeck:<branch>:<path>:<projectName>
+eclipse.project.name =  "${rootProject.eclipse.project.name}:launcher:server";
+
 dependencies {
     compile( 
         [group: 'log4j', name: 'log4j', version: '1.2.16',ext:'jar'],
         [group: 'commons-cli', name: 'commons-cli', version: '1.0',ext:'jar'],
-        [group: 'org.mortbay.jetty', name: 'jetty', version: jettyVersion,ext:'jar'],
-        [group: 'org.mortbay.jetty', name: 'jetty-util', version: jettyVersion,ext:'jar'],
-        [group: 'org.mortbay.jetty', name: 'jetty-plus', version: jettyVersion,ext:'jar'],
+        [group: 'org.eclipse.jetty.aggregate', name: 'jetty-all', version: jettyVersion,ext:'jar'],
+        [group: 'org.kohsuke', name:'libpam4j', version:'1.5', ext:'jar'],
+        // This is in httpcomponents 4+ but stuck on 3.x for now.
+        [group: 'ca.juliusdavies', name: 'not-yet-commons-ssl', version: '0.3.11', ext: 'jar'],
     )
     runtime(
-        [group: 'org.mortbay.jetty', name: 'servlet-api', version: '2.5-20081211',ext:'jar'],
+        [group: 'org.eclipse.jetty.aggregate', name: 'jetty-all', version: jettyVersion, ext: 'jar'],
+        [group: 'javax.servlet', name: 'servlet-api', version: '2.5', ext: 'jar'],
+    )
+    testCompile (
+        [group: 'junit', name: 'junit', version: '4.8.1',ext:'jar'],
+        [group: 'org.mockito', name: 'mockito-all', version: '1.8.5',ext:'jar'],
     )
 }
 
@@ -19,13 +34,14 @@ jar {
     }
 }
 
+install.dependsOn build 
 
 apply plugin: 'maven'
 task createPom << {
     pom {
         project {
             artifactId archivesBaseName
-            groupId "com.dtolabs.rundeck"
+            groupId project.group
             inceptionYear '2011'
             packaging 'jar'
             version version
@@ -45,8 +61,8 @@ task createPom << {
                         artifactId 'maven-compiler-plugin'
                         version '2.3.2'
                         configuration{
-                            'source'('1.5')
-                            'target'('1.5')
+                            'source'('1.7')
+                            'target'('1.7')
                         }
                     }
                     plugin{

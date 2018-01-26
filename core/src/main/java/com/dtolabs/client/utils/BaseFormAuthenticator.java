@@ -46,7 +46,7 @@ import java.util.regex.Pattern;
  * response is a valid redirect after login form is submitted</li> <li>{@link #isLoginError(org.apache.commons.httpclient.HttpMethod)}
  * - return true if the HttpMethod response indicates an error occurred</li> <li>{@link #isFollowLoginRedirect()} -
  * return true if authenticator should follow any redirect returned after login form is submitted</li>
- * <p/>
+ *
  * </ul>
  *
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
@@ -143,7 +143,7 @@ public abstract class BaseFormAuthenticator implements HttpAuthenticator {
      *
      * @return true if authentication succeeded.
      *
-     * @throws com.dtolabs.client.utils.HttpClientException
+     * @throws com.dtolabs.client.utils.HttpClientException on error
      *
      */
     public boolean authenticate(final URL baseURL, final HttpClient client) throws HttpClientException {
@@ -265,7 +265,7 @@ public abstract class BaseFormAuthenticator implements HttpAuthenticator {
                 login.releaseConnection();
 
                 Header locHeader = login.getResponseHeader("Location");
-                String location = null != locHeader ? locHeader.getValue() : null;
+                String location = absoluteUrl(baseURL, null != locHeader ? locHeader.getValue() : null);
                 if (isLoginError(login)) {
                     logger.error("Form-based auth failed");
                     return false;
@@ -300,6 +300,19 @@ public abstract class BaseFormAuthenticator implements HttpAuthenticator {
         }
 
         return true;
+    }
+
+    public static String absoluteUrl(final URL baseURL, String location) throws MalformedURLException {
+        if (null != location && location.startsWith("/")) {
+            //make absolute url
+            location = new URL(
+                    baseURL.getProtocol(),
+                    baseURL.getHost(),
+                    baseURL.getPort(),
+                    location
+            ).toExternalForm();
+        }
+        return location;
     }
 
     /**

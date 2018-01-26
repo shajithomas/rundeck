@@ -23,7 +23,7 @@ package com.dtolabs.rundeck.core.cli.queue;
 * $Id$
 */
 
-import com.dtolabs.rundeck.core.cli.SingleProjectResolver;
+import com.dtolabs.rundeck.core.cli.FailDispatcher;
 import junit.framework.*;
 import com.dtolabs.rundeck.core.tools.AbstractBaseTest;
 import com.dtolabs.rundeck.core.common.Framework;
@@ -31,9 +31,7 @@ import com.dtolabs.rundeck.core.dispatcher.*;
 import com.dtolabs.rundeck.core.cli.CLIToolOptionsException;
 import org.apache.commons.cli.CommandLine;
 
-import java.util.Collection;
-import java.util.ArrayList;
-import java.util.Date;
+import java.util.*;
 import java.io.OutputStream;
 
 
@@ -87,15 +85,24 @@ public class TestQueueTool extends AbstractBaseTest {
     }
 
 
+    void setListProjectsDispatcher(QueueTool tool, final String... projects){
+        tool.setCentralDispatcher(
+                new FailDispatcher() {
+                    @Override
+                    public List<String> listProjectNames() throws CentralDispatcherException {
+                        return Arrays.asList(projects);
+                    }
+                }
+        );
+    }
     /**
      * Test parseArgs method
      *
      * @throws Exception if exception
      */
-    public void testParseArgs() throws Exception {
-        {
+    public void testParseArgsInvalidAction() throws Exception {
             //test invalid action
-            final QueueTool tool = new QueueTool(getFrameworkInstance());
+            final QueueTool tool = createQueueTool();
             try {
                 tool.parseArgs(new String[]{"invalid"});
                 fail("invalid action should have failed");
@@ -104,9 +111,9 @@ public class TestQueueTool extends AbstractBaseTest {
             }
 
         }
-        {
+    public void testParseArgsValidKillAction() throws Exception {
             //test valid actions
-            final QueueTool tool = new QueueTool(getFrameworkInstance());
+            final QueueTool tool = createQueueTool();
             try {
                 tool.run(new String[]{"kill"});
                 fail("should have thrown argument exception.");
@@ -116,9 +123,9 @@ public class TestQueueTool extends AbstractBaseTest {
                 fail("unexpected exception: " + e.getMessage());
             }
         }
-        {
+    public void testParseArgsKillActionId() throws Exception {
             //test valid actions
-            final QueueTool tool = new QueueTool(getFrameworkInstance());
+            final QueueTool tool = createQueueTool();
             boolean success = false;
             try {
                 tool.parseArgs(new String[]{"kill", "-e", "test1"});
@@ -130,18 +137,10 @@ public class TestQueueTool extends AbstractBaseTest {
             assertTrue("parseArgs did not succeed", success);
 
         }
-        {
+    public void testParseArgsListWithoutProject() throws Exception {
             //test -p is required for multiple projects
-            final QueueTool tool = new QueueTool(getFrameworkInstance());
-            tool.internalResolver = new SingleProjectResolver() {
-                public boolean hasSingleProject() {
-                    return false;
-                }
-
-                public String getSingleProjectName() {
-                    return null;
-                }
-            };
+            final QueueTool tool = createQueueTool();
+            setListProjectsDispatcher(tool,"a","b");
             try {
                 final String[] args = {"list"};
                 final CommandLine commandLine = tool.parseArgs(args);
@@ -152,18 +151,11 @@ public class TestQueueTool extends AbstractBaseTest {
                 assertTrue(e.getMessage().endsWith("-p argument is required with list action"));
             }
         }
-        {
+    public void testParseArgsListDefaultProject() throws Exception {
             //test -p is not required for a single project
-            final QueueTool tool = new QueueTool(getFrameworkInstance());
-            tool.internalResolver = new SingleProjectResolver() {
-                public boolean hasSingleProject() {
-                    return true;
-                }
+            final QueueTool tool = createQueueTool();
 
-                public String getSingleProjectName() {
-                    return "testProject";
-                }
-            };
+            setListProjectsDispatcher(tool, "testProject");
             try {
                 final String[] args = {"list"};
                 final CommandLine commandLine = tool.parseArgs(args);
@@ -173,9 +165,9 @@ public class TestQueueTool extends AbstractBaseTest {
                 fail("unexpected exception: " + e.getMessage());
             }
         }
-        {
+    public void testParseArgsList() throws Exception {
             //test valid actions
-            final QueueTool tool = new QueueTool(getFrameworkInstance());
+            final QueueTool tool = createQueueTool();
             try {
                 tool.parseArgs(new String[]{"list"});
             } catch (CLIToolOptionsException e) {
@@ -183,9 +175,9 @@ public class TestQueueTool extends AbstractBaseTest {
             }
 
         }
-        {
+    public void testParseArgsListProject() throws Exception {
             //test valid actions
-            final QueueTool tool = new QueueTool(getFrameworkInstance());
+            final QueueTool tool = createQueueTool();
             try {
                 tool.parseArgs(new String[]{"list","-p","test1"});
                 assertEquals("test1", tool.argProject);
@@ -193,7 +185,10 @@ public class TestQueueTool extends AbstractBaseTest {
                 fail("unexpected exception: " + e.getMessage());
             }
 
-        }
+    }
+
+    private QueueTool createQueueTool() {
+        return new QueueTool(getFrameworkInstance().getPropertyLookup());
     }
 
 
@@ -202,112 +197,136 @@ public class TestQueueTool extends AbstractBaseTest {
      *
      * @throws Exception if exception
      */
-    public void testRun() throws Exception {
-        class FailDispatcher implements CentralDispatcher{
+    public void testRunProjectRequired() throws Exception {
 
-            public QueuedItemResult queueDispatcherJob(IDispatchedJob job) throws CentralDispatcherException {
-                fail("unexpected call to queueDispatcherJob");
-                return null;
-            }
+        final QueueTool tool = createQueueTool();
+        final boolean[] actionCalled = new boolean[]{false};
+        tool.setCentralDispatcher(
+                new FailDispatcher() {
+                    public Collection<QueuedItem> listDispatcherQueue(final String project)
+                            throws CentralDispatcherException
+                    {
+                        //
+                        actionCalled[0] = true;
+                        return new ArrayList<QueuedItem>();
+                    }
 
-            public QueuedItemResult queueDispatcherScript(final IDispatchedScript dispatch) throws
-                CentralDispatcherException {
-                fail("unexpected call to queueDispatcherScript");
-                return null;
-            }
-
-            public Collection<QueuedItem> listDispatcherQueue(final String project) throws CentralDispatcherException {
-                //
-                fail("unexpected call to listDispatcherQueue");
-                return null;
-            }
-            public Collection<QueuedItem> listDispatcherQueue() throws CentralDispatcherException {
-                //
-                fail("unexpected call to listDispatcherQueue");
-                return null;
-            }
-
-            public DispatcherResult killDispatcherExecution(final String id) throws CentralDispatcherException {
-                fail("unexpected call to killDispatcherExecution");
-                return null;
-            }
-
-            public ExecutionFollowResult followDispatcherExecution(String id, ExecutionFollowRequest request,
-                                                                   ExecutionFollowReceiver receiver) throws
-                CentralDispatcherException {
-                fail("unexpected call to followDispatcherExecution");
-                return null;
-            }
-
-            public Collection<IStoredJobLoadResult> loadJobs(ILoadJobsRequest request, java.io.File input, JobDefinitionFileFormat format) throws
-                CentralDispatcherException {
-                fail("unexpected call to loadJobs");
-                return null;
-            }
-
-            public Collection<IStoredJob> listStoredJobs(IStoredJobsQuery query, OutputStream output,
-                                                         JobDefinitionFileFormat format) throws
-                CentralDispatcherException {
-                fail("unexpected call to listStoredJobs");
-                return null;
-            }
-
-            public void reportExecutionStatus(String project, String title, String status, int totalNodeCount,
-                                              int successNodeCount, String tags, String script, String summary,
-                                              Date start,
-                                              Date end) throws CentralDispatcherException {
-                fail("unexpected call to reportExecutionStatus");
-            }
-
-            public Collection<DeleteJobResult> deleteStoredJobs(Collection<String> jobIds) throws CentralDispatcherException {
-                fail("unexpected call to deleteStoredJobs");
-                return null;
-            }
-
-            public ExecutionDetail getExecution(String execId) throws CentralDispatcherException {
-                fail("unexpected call to getExecution");
-                return null;
-            }
-        }
-        final Framework framework = getFrameworkInstance();
-        {
-            final QueueTool tool = new QueueTool(framework);
-            final boolean[] actionCalled = new boolean[]{false};
-            framework.setCentralDispatcherMgr(new FailDispatcher(){
-                public Collection<QueuedItem> listDispatcherQueue(final String project) throws CentralDispatcherException {
-                    //
-                    actionCalled[0] = true;
-                    return new ArrayList<QueuedItem>();
+                    @Override
+                    public List<String> listProjectNames() throws CentralDispatcherException {
+                        return Arrays.asList("test", "test2");
+                    }
                 }
+        );
 
-            });
+        //test list action without required -p
 
-            //test list action without required -p
+        try {
+            tool.run(new String[]{"list"});
 
-            try{
-                tool.run(new String[]{"list"});
-
-                fail("should have thrown argument exception.");
-            } catch (CLIToolOptionsException e) {
-                assertNotNull(e);
-            } catch (QueueToolException e) {
-                fail("unexpected exception: " + e.getMessage());
-            }
-            assertFalse("list action was not called", actionCalled[0]);
-
-
-            //exec the dispatch
-
-            tool.run(new String[]{"list","-p","test"});
-            assertTrue("list action was not called", actionCalled[0]);
-
+            fail("should have thrown argument exception.");
+        } catch (CLIToolOptionsException e) {
+            assertNotNull(e);
+        } catch (QueueToolException e) {
+            fail("unexpected exception: " + e.getMessage());
         }
-        {
+        assertFalse("list action was not called", actionCalled[0]);
 
-            final QueueTool tool = new QueueTool(framework);
+    }
+
+    public void testRunProjectUsed() throws Exception {
+        //exec the dispatch
+        final QueueTool tool = createQueueTool();
+        final boolean[] actionCalled = new boolean[]{false};
+        tool.setCentralDispatcher(
+                new FailDispatcher() {
+
+                    @Override
+                    public PagedResult<QueuedItem> listDispatcherQueue(
+                            final String project, final Paging paging
+                    ) throws CentralDispatcherException
+                    {
+                        //
+                        actionCalled[0] = true;
+                        return new PagedResult<QueuedItem>() {
+                            @Override
+                            public Collection<QueuedItem> getResults() {
+                                return new ArrayList<QueuedItem>();
+                            }
+
+                            @Override
+                            public long getTotal() {
+                                return 0;
+                            }
+
+                            @Override
+                            public Paging getPaging() {
+                                return null;
+                            }
+                        };
+                    }
+
+                    @Override
+                    public List<String> listProjectNames() throws CentralDispatcherException {
+                        return Arrays.asList("test", "test2");
+                    }
+                }
+        );
+        tool.run(new String[]{"list", "-p", "test"});
+        assertTrue("list action was called", actionCalled[0]);
+
+    }
+    public void testPaging() throws Exception {
+        //exec the dispatch
+        final QueueTool tool = createQueueTool();
+        final boolean[] actionCalled = new boolean[]{false};
+        tool.setCentralDispatcher(
+                new FailDispatcher() {
+
+                    @Override
+                    public PagedResult<QueuedItem> listDispatcherQueue(
+                            final String project, final Paging paging
+                    ) throws CentralDispatcherException
+                    {
+                        //
+                        actionCalled[0] = true;
+                        assertEquals(10, paging.getOffset());
+                        assertEquals(12, paging.getMax());
+                        return new PagedResult<QueuedItem>() {
+                            @Override
+                            public Collection<QueuedItem> getResults() {
+                                return new ArrayList<QueuedItem>();
+                            }
+
+                            @Override
+                            public long getTotal() {
+                                return 0;
+                            }
+
+                            @Override
+                            public Paging getPaging() {
+                                return paging;
+                            }
+                        };
+                    }
+
+                    @Override
+                    public List<String> listProjectNames() throws CentralDispatcherException {
+                        return Arrays.asList("test", "test2");
+                    }
+                }
+        );
+        tool.argOffset=10;
+        tool.argMax=12;
+        tool.run(new String[]{"list", "-p", "test"});
+        assertTrue("list action was called", actionCalled[0]);
+
+    }
+    public void testRunKillIdRequired() throws Exception {
+
+            final QueueTool tool = createQueueTool();
             final boolean[] actionCalled = new boolean[]{false};
             final String[] idCalled = new String[]{"wrong"};
-            framework.setCentralDispatcherMgr(new FailDispatcher() {
+            tool.setCentralDispatcher(new FailDispatcher() {
                 public DispatcherResult killDispatcherExecution(final String id) throws CentralDispatcherException {
                     actionCalled[0] = true;
                     idCalled[0] = id;
@@ -348,7 +367,5 @@ public class TestQueueTool extends AbstractBaseTest {
                 fail("unexpected exception: " + e.getMessage());
             }
 
-
-        }
     }
 }

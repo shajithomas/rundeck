@@ -1,3 +1,4 @@
+<%@ page import="rundeck.Execution" %>
 <%--
   Copyright 2011 DTO Labs, Inc. (http://dtolabs.com)
 
@@ -22,36 +23,7 @@
  --%>
 
 <!--Display job details-->
-<div class="left">
-    <div class="right">
-        <table width="100%" cellpadding="0" cellspacing="0">
-            <tr>
-                <td>
-                    <g:render template="/execution/execDetails" model="[execdata:scheduledExecution]"/>
-                </td>
-            </tr>
-            <tbody class="section">
-            <tr>
-                <td style="" class="jobbuttons ">
-                    <div class="right">
-
-                        <g:set var="lastrun" value="${scheduledExecution.id?Execution.findByScheduledExecutionAndDateCompletedIsNotNull(scheduledExecution,[max: 1, sort:'dateStarted', order:'desc']):null}"/>
-                        <g:set var="successcount" value="${scheduledExecution.id?Execution.countByScheduledExecutionAndStatus(scheduledExecution,'true'):0}"/>
-                        <g:set var="successrate" value="${execCount>0? (successcount/execCount) : 0}"/>
-                        <g:render template="/scheduledExecution/showStats" model="[scheduledExecution:scheduledExecution,lastrun:lastrun?lastrun:null, successrate:successrate]"/>
-                    </div>
-                </td>
-            </tr>
-            </tbody>
-            <g:if test="${scheduledExecution.uuid}">
-                <tbody class="section">
-                    <tr>
-                       <td>
-                           <span class="desc">UUID: ${scheduledExecution.uuid.encodeAsHTML()}</span>
-                        </td>
-                    </tr>
-                </tbody>
-            </g:if>
-        </table>
-    </div>
+<div >
+    <g:render template="/execution/execDetails" model="[execdata:scheduledExecution,knockout:true]"/>
+    <g:render template="/scheduledExecution/renderJobStats" model="${[scheduledExecution: scheduledExecution]}"/>
 </div>

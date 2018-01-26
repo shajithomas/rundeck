@@ -23,10 +23,16 @@
 */
 package com.dtolabs.rundeck.core.cli;
 
+import com.dtolabs.client.services.DispatcherConfig;
 import com.dtolabs.rundeck.core.Constants;
+import com.dtolabs.rundeck.core.VersionConstants;
+import com.dtolabs.rundeck.core.common.FrameworkFactory;
+import com.dtolabs.rundeck.core.dispatcher.CentralDispatcher;
+import com.dtolabs.rundeck.core.utils.IPropertyLookup;
 import org.apache.commons.cli.*;
 import org.apache.log4j.PropertyConfigurator;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -48,11 +54,12 @@ public abstract class BaseTool implements CLITool {
     private CommandLine commandLine;
     private final List<CLIToolOptions> toolOptions;
     private boolean shouldExit = false;
+    private CentralDispatcher centralDispatcher;
 
     /**
      * Add a new CLIToolOptions object to the options used by this tool.
      *
-     * @param option
+     * @param option options
      */
     protected void addToolOptions(final CLIToolOptions option) {
         toolOptions.add(option);
@@ -70,8 +77,7 @@ public abstract class BaseTool implements CLITool {
     }
 
     /**
-     * Return true if the -h/--help option should be added to the options automatically.
-     * @return
+     * @return true if the -h/--help option should be added to the options automatically.
      */
     protected abstract boolean isUseHelpOption();
 
@@ -94,14 +100,62 @@ public abstract class BaseTool implements CLITool {
     }
 
     /**
+     * Return a string to display the specified option in help text
+     * @param opt opt name
+     * @return full display string
+     */
+    protected String optionDisplayString(final String opt) {
+        return optionDisplayString(opt, true);
+    }
+
+    /**
+     * Return a string to display the specified option in help text
+     * @param extended if true, include full argument descriptor
+     * @param opt opt name
+     * @return  display string
+     */
+    protected String optionDisplayString(final String opt, boolean extended) {
+        StringBuffer stringBuffer = new StringBuffer();
+        stringBuffer.append("-").append(opt);
+        Option option = getOption(opt);
+        if(null!=option) {
+            if (option.getLongOpt() != null) {
+                stringBuffer.append("/--");
+                stringBuffer.append(option.getLongOpt());
+            }
+            if(option.getArgName()!=null && extended){
+                stringBuffer.append(" <");
+                stringBuffer.append(option.getArgName());
+                stringBuffer.append(">");
+            }
+        }
+        return stringBuffer.toString();
+    }
+
+    /**
+     * Options.getOption(name) doesnt properly clone the option :( and leaves out the argName
+     * @param opt optname
+     * @return found option, or null
+     */
+    private Option getOption(final String opt) {
+        for (Object o : getOptions().getOptions()) {
+            Option opto=(Option) o;
+            if (opto.getOpt().equals(opt)) {
+                return opto;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Run the tool's lifecycle given the input arguments.
      *
      * @param args the cli arg vector
      *
-     * @throws CLIToolException
+     * @throws CLIToolException if an error occurs
      */
     public void run(final String[] args) throws CLIToolException {
-        PropertyConfigurator.configure(Constants.getLog4jProperties(Constants.getSystemBaseDir()));
+        PropertyConfigurator.configure(Constants.getLog4jPropertiesFile().getAbsolutePath());
         CommandLine cli = parseArgs(args);
         validateOptions(cli,args);
         go();
@@ -131,6 +185,9 @@ public abstract class BaseTool implements CLITool {
     /**
      * Validate the values parsed by the options, will apply this for each CLIToolOptions added to the tool. subclasses
      * may override this but should call super
+     * @param cli cli
+     * @param args args
+     * @throws CLIToolOptionsException if an error occurs
      */
     public void validateOptions(final CommandLine cli, final String[] args) throws CLIToolOptionsException {
         if (null != toolOptions) {
@@ -142,6 +199,7 @@ public abstract class BaseTool implements CLITool {
 
     /**
      * Perform the actions for the tool
+     * @throws CLIToolException on error
      */
     protected abstract void go() throws CLIToolException;
 
@@ -150,9 +208,7 @@ public abstract class BaseTool implements CLITool {
     }
 
     /**
-     * Return the help string used when -h option is specified.
-     *
-     * @return
+     * @return the help string used when -h option is specified.
      */
     public abstract String getHelpString();
 
@@ -166,7 +222,7 @@ public abstract class BaseTool implements CLITool {
             helpString,
             "options:",
             getOptions(),
-            "");
+                "[RUNDECK version " + VersionConstants.VERSION + " (" + VersionConstants.BUILD + ")]");
     }
 
 
@@ -187,9 +243,50 @@ public abstract class BaseTool implements CLITool {
 
     /**
      * Set whether the {@link #exit(int)} method should call System.exit.
-     * @param shouldExit
+     * @param shouldExit true to exit
      */
     protected void setShouldExit(final boolean shouldExit) {
         this.shouldExit = shouldExit;
+    }
+
+    public CentralDispatcher getCentralDispatcher() {
+        return centralDispatcher;
+    }
+
+    public void setCentralDispatcher(final CentralDispatcher centralDispatcher) {
+        this.centralDispatcher = centralDispatcher;
+    }
+
+    public static DispatcherConfig createDefaultDispatcherConfig() {
+        DispatcherConfig envConfig = FrameworkFactory.createDispatcherConfig(
+                System.getProperty("rundeck.server.url", System.getenv("RUNDECK_URL")),
+                System.getProperty("rundeck.server.username", System.getenv("RUNDECK_USER")),
+                System.getProperty("rundeck.server.password", System.getenv("RUNDECK_PASS"))
+        );
+        if (FrameworkFactory.isValid(envConfig)) {
+            return envConfig;
+        }
+
+        IPropertyLookup propertyLookup = FrameworkFactory.createFilesystemFramework(
+                new File(Constants.getSystemBaseDir())
+        ).getPropertyLookup();
+
+        if(propertyLookup.hasProperty("framework.server.url") &&
+                propertyLookup.hasProperty("framework.server.username") &&
+                propertyLookup.hasProperty("framework.server.password")) {
+            DispatcherConfig fwkPropsConfig = FrameworkFactory.createDispatcherConfig(propertyLookup);
+
+            if (FrameworkFactory.isValid(fwkPropsConfig)) {
+                return fwkPropsConfig;
+            }
+        }
+        throw new RuntimeException("Unable to determine credentials for connecting to the Rundeck Server.\n" +
+                                   "   Set environment variables: RUNDECK_URL, RUNDECK_USER, RUNDECK_PASS.\n" +
+                                   "Or \n" +
+                                   "   Set JVM System properties: \n" +
+                                   "   rundeck.server.url, rundeck.server.username, rundeck.server.password\n" +
+                                   "Or \n" +
+                                   "   In framework.properties, set properties:\n" +
+                                   "   framework.server.url, framework.server.username, framework.server.password");
     }
 }

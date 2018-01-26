@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# set -x
 #test output from /api/execution/{id}/output
 
 DIR=$(cd `dirname $0` && pwd)
@@ -11,25 +11,25 @@ source $DIR/include.sh
 
 runurl="${APIURL}/run/command"
 proj="test"
-params="project=${proj}&exec=echo+testing+execution+output+api+line+1;sleep+2;echo+line+2;sleep+2;echo+line+3;sleep+2;echo+line+4+final"
+params="project=${proj}&exec=echo+%22%27testing+execution+%3Coutput%3E+api-plain+line+1%27%22+;sleep+2;echo+line+2;sleep+2;echo+line+3;sleep+2;echo+line+4+final"
 
 expectfile=$DIR/expect-exec-output-plain.txt
 
 cat > $expectfile <<END
-testing execution output api line 1
+testing execution <output> api-plain line 1
 line 2
 line 3
 line 4 final
 END
 
 # get listing
-docurl ${runurl}?${params} > $DIR/curl.out
+docurl -X POST ${runurl}?${params} > $DIR/curl.out
 if [ 0 != $? ] ; then
     errorMsg "ERROR: failed query request"
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #select id
 
@@ -115,5 +115,9 @@ if [[  0 != $? ]] ; then
 fi
 
 rm $expectfile $outfile
+
+##wait for exec to finish...
+rd-queue follow -q -e $execid || fail "Waiting for $execid to finish"
+$SHELL $SRC_DIR/api-expect-exec-success.sh $execid || exit 2
 
 echo "OK"

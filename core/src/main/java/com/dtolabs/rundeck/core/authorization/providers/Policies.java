@@ -16,7 +16,7 @@
 
 package com.dtolabs.rundeck.core.authorization.providers;
 
-import com.dtolabs.rundeck.core.authorization.Attribute;
+import com.dtolabs.rundeck.core.authorization.*;
 
 import javax.security.auth.Subject;
 import javax.xml.parsers.ParserConfigurationException;
@@ -29,97 +29,86 @@ import java.util.*;
  *
  * @author noahcampbell
  */
-public class Policies {
+public class Policies implements AclRuleSetSource{
 
-    private final List<File> policyFiles = new ArrayList<File>();
+    private Iterable<PolicyCollection> cache;
+    private ValidationSet validation;
 
-    private PoliciesCache cache;
-
-
-    public Policies(final PoliciesCache cache) {
+    public Policies(final Iterable<PolicyCollection> cache, final ValidationSet validationSet) {
+        this.validation=validationSet;
         this.cache = cache;
+    }
+    public Policies(final Iterable<PolicyCollection> cache) {
+        this(cache, null);
     }
 
     public int count() {
         int count = 0;
         for (PolicyCollection f : cache) {
-
-            try {
-                count += f.countPolicies();
-            } catch (InvalidCollection e) {
-                // TODO squash
-            }
+            count += f.countPolicies();
         }
         return count;
     }
 
-    /**
-     * Load the policies contained in the root path.
-     *
-     * @param rootPath
-     *
-     * @return
-     *
-     * @throws PoliciesParseException Thrown when there is a problem parsing a file.
-     */
-    public static Policies load(File rootPath) throws IOException, PoliciesParseException {
-
-        Policies p = null;
-        try {
-            p = new Policies(new PoliciesCache(rootPath));
-        } catch (ParserConfigurationException e) {
-            throw new PoliciesParseException(e);
+    @Override
+    public AclRuleSet getRuleSet() {
+        Set<AclRule> set = new HashSet<>();
+        for (final PolicyCollection f : cache) {
+            set.addAll(f.getRuleSet().getRules());
         }
+        return new AclRuleSetImpl(set);
+    }
 
-        return p;
+    /**
+     * @return Load the policies contained in the root path.
+     *
+     * @param rootPath file root path
+     *
+     *
+     */
+    public static Policies load(File rootPath)  {
+        return new Policies(PoliciesCache.fromDir(rootPath));
+    }
+
+    /**
+     * @return Load the policies contained in the root path.
+     *
+     * @param rootPath file root path
+     *
+     *
+     */
+    public static Policies load(File rootPath, final Set<Attribute> forcedContext)  {
+        return new Policies(PoliciesCache.fromDir(rootPath));
+    }
+    /**
+     * @return Load the policies contained in the root path.
+     *
+     * @param singleFile single file
+     *
+     *
+     */
+    public static Policies loadFile(File singleFile)  {
+        return new Policies(PoliciesCache.fromFile(singleFile));
     }
 
     public List<AclContext> narrowContext(final Subject subject, final Set<Attribute> environment) {
 
         List<AclContext> matchedContexts = new ArrayList<AclContext>();
         for (final PolicyCollection f : cache) {
-            try {
-                matchedContexts.addAll(f.matchedContexts(subject, environment));
-            } catch (InvalidCollection e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
-            }
+            matchedContexts.addAll(f.matchedContexts(subject, environment));
         }
         return matchedContexts;
     }
 
-
-    @Override
-    public String toString() {
-        StringBuilder builder = new StringBuilder();
-        builder.append(getClass().getName());
-        builder.append(" [");
-        Iterator<File> iter = this.policyFiles.iterator();
-        while (iter.hasNext()) {
-            builder.append(iter.next());
-            if (iter.hasNext()) {
-                builder.append(", ");
-            }
-        }
-        builder.append("]");
-
-        return builder.toString();
-    }
-
     /**
-     * @return
+     * @return all roles list
      */
     @Deprecated
     public List<String> listAllRoles() {
         List<String> results = new ArrayList<String>();
         for (PolicyCollection f : cache) {
-            try {
-                results.addAll(f.groupNames());
+            results.addAll(f.groupNames());
 
-            } catch (InvalidCollection e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
-            }
         }
 
         return results;

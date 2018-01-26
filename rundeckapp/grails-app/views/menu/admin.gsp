@@ -20,131 +20,149 @@
    Created: 6/1/11 2:22 PM
 --%>
 
-<%@ page contentType="text/html;charset=UTF-8" %>
+<%@ page import="com.dtolabs.rundeck.server.authorization.AuthConstants" contentType="text/html;charset=UTF-8" %>
 <html>
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
     <meta name="layout" content="base"/>
-    <title>Administration</title>
+    <meta name="tabpage" content="configure"/>
+    <title><g:message code="gui.menu.Admin" /></title>
 </head>
 
 <body>
 
-<div class="pageTop">
-    <div class="floatl">
-        <span class="welcomeMessage">Administration</span>
-    </div>
-
-    <div class="clear"></div>
-</div>
-
-<div class="pageBody">
+<div class="row">
+<div class="col-sm-12">
     <g:render template="/common/messages"/>
-    <ul>
-        <li>
-            <g:link controller="menu" action="systemInfo">
-                <g:message code="gui.menu.SystemInfo" default="System Information"/>
-            </g:link>
+    <g:if test="${flash.joberrors}">
+        <div class="alert alert-danger alert-dismissable">
+            <a class="close" data-dismiss="alert" href="#" aria-hidden="true">&times;</a>
+            <ul>
+                <g:each in="${flash.joberrors}" var="errmsg">
+                    <li><g:enc>${errmsg}</g:enc></li>
+                </g:each>
+            </ul>
+        </div>
+    </g:if>
+    <g:if test="${flash.execerrors}">
+        <div class="alert alert-warning alert-dismissable">
+            <a class="close" data-dismiss="alert" href="#" aria-hidden="true">&times;</a>
+            <g:message code="some.files.in.the.archive.could.not.be.imported" />
+            <ul>
+                <g:each in="${flash.execerrors}" var="errmsg">
+                    <li><g:enc>${errmsg}</g:enc></li>
+                </g:each>
+            </ul>
+        </div>
+    </g:if>
+    <g:if test="${flash.aclerrors}">
+        <div class="alert alert-warning alert-dismissable">
+            <a class="close" data-dismiss="alert" href="#" aria-hidden="true">&times;</a>
+            <g:message code="some.files.in.the.archive.could.not.be.imported" />
+            <ul>
+                <g:each in="${flash.aclerrors}" var="errmsg">
+                    <li><g:enc>${errmsg}</g:enc></li>
+                </g:each>
+            </ul>
+        </div>
+    </g:if>
+    </div>
+</div>
+<div class="row">
+<div class="col-sm-3">
+    <g:render template="configNav" model="[selected:'project']"/>
+</div>
+<div class="col-sm-9">
+
+    <span class="h3">
+        <g:message code="project.named.prompt" args="${[params.project ?: request.project]}"/>
+    </span>
+<g:set var="authAdmin" value="${auth.resourceAllowedTest(action: AuthConstants.ACTION_ADMIN, type: "project",
+        name: (params.project ?: request.project), context: "application")}"/>
+<g:set var="authDelete"
+       value="${authAdmin || auth.resourceAllowedTest(action: AuthConstants.ACTION_DELETE, type: "project",
+               name: (params.project ?: request.project), context: "application")}"/>
+<g:set var="authExport"
+       value="${authAdmin || auth.resourceAllowedTest(action: AuthConstants.ACTION_EXPORT, type: "project",
+               name: (params.project ?: request.project), context: "application")}"/>
+<g:set var="authImport"
+       value="${authAdmin || auth.resourceAllowedTest(action: AuthConstants.ACTION_IMPORT, type: "project",
+               name: (params.project ?: request.project), context: "application")}"/>
+<g:set var="authConfigure"
+       value="${authAdmin || auth.resourceAllowedTest(action: AuthConstants.ACTION_CONFIGURE, type: "project",
+               name: (params.project ?: request.project), context: "application")}"/>
+<div class="row row-space">
+<div class="col-sm-12">
+    <ul class="nav nav-tabs">
+        <li class="${authConfigure ? 'active' : 'disabled'}">
+            <a href="#configure"
+               data-toggle="${authConfigure ? 'tab' : ''}"
+               title="${authConfigure ? '' : message(code:"request.error.unauthorized.title")}"
+                ><g:message code="configuration" /></a>
         </li>
-        <li>
-            <g:link controller="user" action="list">
-                <g:message code="gui.menu.UserProfiles" default="User Profiles"/>
-            </g:link>
+        <li class="${!authExport ? 'disabled' : ''}">
+            <a href="#export"
+               data-toggle="${authExport ? 'tab' : ''}"
+               title="${authExport ? '' : message(code:"request.error.unauthorized.title")}"
+                ><g:message code="export.archive" /></a>
+        </li>
+        <li class="${!authImport ? 'disabled' : ''}">
+            <a href="#import"
+               data-toggle="${authImport ? 'tab' : ''}"
+               title="${authImport ? '' : message(code:"request.error.unauthorized.title")}"
+                ><g:message code="import.archive" /></a>
+        </li>
+        <li class="${!authDelete?'disabled':''}">
+            <a href="#delete" data-toggle="${authDelete?'tab':''}"
+               title="${authDelete?'':message(code:"request.error.unauthorized.title")}">
+                <g:message code="delete.project" />
+            </a>
         </li>
     </ul>
 
-    <div class="rounded" style="width:600px;">
-        Project: <span class="prompt">${session.project.encodeAsHTML()}</span>
-        -
-        <g:link controller="framework" action="editProject" params="[project:session.project]" class="action textbtn">
-            <g:message code="gui.menu.ProjectEdit" default="Configure Project"/>
-        </g:link>
-
-        <div class="presentation ">
-            <table class="simpleform">
-
-                <tr>
-                    <td><g:message code="domain.Project.field.resourcesUrl" default="Resources Provider URL"/>:</td>
-                    <td>
-                        <g:if test="${resourcesUrl}">
-                            <span class="configvalue">${resourcesUrl.encodeAsHTML()}</span>
-                        </g:if>
-                        <g:else>
-                            <span class="info note"><g:message code="message.none.set"/></span>
-                        </g:else>
-                    </td>
-                </tr>
-                <tr>
-                    <td><g:message code="domain.Project.field.sshKeyPath" default="Default SSH Key File"/>:</td>
-                    <td>
-                        <g:if test="${sshkeypath}">
-                            <span class="configvalue">${sshkeypath.encodeAsHTML()}</span>
-                        </g:if>
-                        <g:else>
-                            <span class="info note"><g:message code="message.none.set"/></span>
-                        </g:else>
-                    </td>
-                </tr>
-            </table>
-        </div>
-
-        <span class="prompt section">Export Archive</span>
-
-        <div class="presentation">
-            <g:link controller="project" action="export" params="[name: session.project]">
-                <img src="${resource(dir: 'images', file: 'icon-small-file.png')}" alt="download" width="13px"
-                     height="16px"/>
-                ${session.project.encodeAsHTML()}.rdproject.jar
+<div class="tab-content">
+<div class="tab-pane active" id="configure">
+<ul class="list-group list-group-tab-content">
+         <g:if test="${authConfigure}">
+         <li class="list-group-item">
+            <g:link controller="framework" action="editProject" params="[project: params.project ?: request.project]"
+                    class="btn btn-success   ">
+                <i class="glyphicon glyphicon-edit"></i>
+                <g:message code="page.admin.EditProjectSimple.button" default="Simple Configuration"/>
             </g:link>
-            -
-            <span class="info note">
-                Download an archive of project <em>${session.project.encodeAsHTML()}</em>
-            </span>
-        </div>
+            <g:link controller="framework" action="editProjectConfig" params="[project: params.project ?: request.project]"
+                    class="btn btn-info has_tooltip"
+                    data-placement="right"
+                    title="${message(code:'page.admin.EditProjectConfigFile.title',default:'Advanced: Edit config file directly')}"
+                       >
+                <i class="glyphicon glyphicon-edit"></i>
+                <g:message code="page.admin.EditProjectConfigFile.button" default="Edit Configuration File"/>
+            </g:link>
+         </li>
+         <li class="list-group-item">
+            <g:link controller="framework"
+                    action="editProjectFile"
+                    params="[project: params.project ?: request.project, filename: 'readme.md']"
+                    class="btn btn-${hasreadme?'info':'link btn-success'} btn-sm">
+                <i class="glyphicon glyphicon-edit"></i>
+                ${hasreadme?'Edit':'Add'} Project Readme
+            </g:link>
+            <g:link
+                    controller="framework"
+                    action="editProjectFile"
+                    params="[project: params.project ?: request.project,filename:'motd.md']"
+                    class="btn btn-${hasmotd?'info':'link btn-success'} btn-sm">
+                <i class="glyphicon glyphicon-edit"></i>
+                ${hasmotd?'Edit':'Add'} Message of the Day
+            </g:link>
+         </li>
 
-        <g:expander key="projectImport" classnames="prompt section">Import Archive</g:expander>
-        <div style="display:none" id="projectImport" class="presentation ">
-            <g:form controller="project" action="importArchive" enctype="multipart/form-data">
-                <label>
-                    Choose a Rundeck archive
-                    <input type="file" name="zipFile"/>
-                </label>
-
-                <div class="info note">
-                    Importing an archive:
-                    <ul>
-                        <li>Creates any Jobs in the archive not found in this project with a new unique UUID</li>
-                        <li>Updates any Jobs in the archive that match Jobs found in the project (group and name match)</li>
-                        <li>Creates new Executions for the imported Jobs</li>
-                        <li>Creates new History reports for imported Executions and Jobs</li>
-                    </ul>
-                </div>
-
-                <g:hiddenField name="name" value="${session.project}"/>
-
-                <div class="buttons">
-                    <div id="uploadFormButtons">
-                        <g:actionSubmit id="createFormCancelButton" value="Cancel"/>
-                        <g:actionSubmit action="importArchive" value="Import" id="uploadFormUpload"
-                                        onclick="['uploadFormButtons','importUploadSpinner'].each(Element.toggle)"/>
-                    </div>
-
-                    <div id="importUploadSpinner" class="spinner block" style="display:none;">
-                        <img src="${resource(dir: 'images', file: 'icon-tiny-disclosure-waiting.gif')}"
-                             alt="Spinner"/>
-                        Uploading File...
-                    </div>
-                </div>
-            </g:form>
-        </div>
-
-        <span class="prompt section">
-            <g:message code="framework.service.ResourceModelSource.label"/>
-        </span>
-
-        <div class="presentation">
+        <li class="list-group-item">
+            <h4 class="list-group-item-heading">
+                <g:message code="framework.service.ResourceModelSource.label"/>
+            </h4>
             <g:if test="${!configs}">
-                <span class="info note"><g:message code="message.none.set"/></span>
+                <div class="text-muted"><g:message code="message.none.set"/></div>
             </g:if>
 
             <ol id="configs">
@@ -161,23 +179,66 @@
                                 </g:if>
                                 <g:else>
                                     <span
-                                        class="warn note">Invalid Resurce Model Source configuration: Provider not found: ${config.type.encodeAsHTML()}</span>
+                                        class="text-warning"><g:message code="invalid.resource.model.source.configuration.provider.not.found"  args="${[config.type]}"/></span>
                                 </g:else>
+                                <g:if test="${nodeErrorsMap && nodeErrorsMap[(n+1)+'.source']}">
+                                    <div class="row row-space">
+                                    <div class="col-sm-12">
+                                        <g:set var="arkey" value="${g.rkey()}"/>
+                                        <div class=" well well-embed text-danger " id="srcerr_${arkey}">
+                                            <g:icon name="warning-sign"/>
+                                            Error:
+                                            ${nodeErrorsMap[(n+1)+'.source'].message}
+                                        </div>
+                                    </div>
+                                    </div>
+                                </g:if>
                             </div>
                         </li>
                     </g:each>
                 </g:if>
             </ol>
-        </div>
-        <span class="prompt section">
-            Default <g:message code="framework.service.NodeExecutor.label"/>
-        </span>
+        </li>
 
-        <div class="presentation">
-            <span
-                class="info note"><g:message code="domain.Project.edit.NodeExecutor.explanation"/></span>
+             <g:if test="${extraConfig}">
+                 <div class="list-group-item">
+                     <h4 class="list-group-item-heading ">
+                         <g:message code="resource.model" />
+                     </h4>
+
+                     <span class="text-muted">
+                         <g:message code="additional.configuration.for.the.resource.model.for.this.project" />
+                     </span>
+
+                     <div class="inpageconfig">
+                         <g:each in="${extraConfig.keySet()}" var="configService">
+                             <g:set var="configurable" value="${extraConfig[configService].configurable}"/>
+                             <g:if test="${configurable.category == 'resourceModelSource'}">
+
+                                 <g:set var="pluginprefix" value="${extraConfig[configService].get('prefix')}"/>
+
+                                 <g:each in="${configurable.projectConfigProperties}" var="prop">
+                                     <g:render template="/framework/pluginConfigPropertySummaryValue"
+                                               model="${[
+                                                       prop:prop,
+                                                       prefix:pluginprefix,
+                                                         values:extraConfig[configService].get('values')?:[:],
+                                               ]}"/>
+                                 </g:each>
+                                 
+                             </g:if>
+                         </g:each>
+                     </div>
+                 </div>
+             </g:if>
+
+        <li class="list-group-item">
+            <h4 class="list-group-item-heading">
+                <g:message code="framework.service.NodeExecutor.default.label" />
+            </h4>
+            <span class="text-muted"><g:message code="domain.Project.edit.NodeExecutor.explanation"/></span>
             <g:if test="${!nodeexecconfig}">
-                <span class="info note"><g:message code="message.none.set"/></span>
+                <div class="text-warning"><g:message code="message.none.set"/></div>
             </g:if>
 
             <g:if test="${nodeexecconfig}">
@@ -195,16 +256,16 @@
                     </g:else>
                 </div>
             </g:if>
-        </div>
-        <span class="prompt section">
-            Default <g:message code="framework.service.FileCopier.label"/>
-        </span>
+        </li>
 
-        <div class="presentation">
+        <li class="list-group-item">
+            <h4 class="list-group-item-heading">
+                <g:message code="framework.service.FileCopier.default.label" />
+            </h4>
             <span
-                class="info note"><g:message code="domain.Project.edit.FileCopier.explanation"/></span>
+                class="text-muted"><g:message code="domain.Project.edit.FileCopier.explanation"/></span>
             <g:if test="${!fcopyconfig}">
-                <span class="info note"><g:message code="message.none.set" /></span>
+                <div class="text-warning"><g:message code="message.none.set"/></div>
             </g:if>
 
             <g:if test="${fcopyconfig}">
@@ -222,8 +283,257 @@
                     </g:else>
                 </div>
             </g:if>
+        </li>
+
+         </g:if>
+        <g:else>
+            <li class="list-group-item">
+                <p class="text-muted">
+                    <g:message code="configuration.not.available" />
+                </p>
+            </li>
+        </g:else>
+    </ul>
+
+</div>
+
+<g:if test="${authExport}">
+<div class="tab-pane" id="export">
+    <div class="panel panel-default panel-tab-content">
+        <div class="panel-heading">
+            <g:message code="download.an.archive.of.project.named.prompt" args="${[params.project ?: request.project]}"/>
+        </div>
+        <div class="panel-body">
+                <g:link controller="project" action="exportPrepare" params="[project: params.project ?: request.project]"
+                    class="btn btn-success"
+                >
+                    <g:message code="export.project.jar.button" args="${[params.project ?: request.project]}" />
+                </g:link>
+
+        </div>
+
+    </div>
+
+
+</div>
+</g:if>
+<g:if test="${authDelete}">
+<div class="tab-pane" id="delete">
+    <div class="panel panel-default panel-tab-content">
+        <div class="panel-heading">
+            <g:message code="delete.project" />
+        </div>
+        <div class="panel-body">
+
+
+                <a class="btn btn-danger btn-lg" data-toggle="modal" href="#deleteProjectModal">
+                    <g:message code="delete.this.project.button" />
+                    <i class="glyphicon glyphicon-remove"></i>
+                </a>
+                <g:form style="display: inline;" controller="project" action="delete" params="[project: (params.project ?: request.project)]"
+                        useToken="true"
+                >
+                <div class="modal fade" id="deleteProjectModal" role="dialog" aria-labelledby="deleteProjectModalLabel"
+                     aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <button type="button" class="close" data-dismiss="modal"
+                                        aria-hidden="true">&times;</button>
+                                <h4 class="modal-title" id="deleteProjectModalLabel"><g:message code="delete.project" /></h4>
+                            </div>
+
+                            <div class="modal-body">
+                                <span class="text-danger"><g:message code="really.delete.this.project" /></span>
+                            </div>
+                            <div class="modal-body container">
+                                <div class="form-group">
+                                    <label class="control-label col-sm-2"><g:message code="project.prompt" /></label>
+
+                                    <div class="col-sm-10">
+                                        <span class="form-control-static"
+                                              data-bind="text: filterName"><g:enc>${params.project ?: request.project}</g:enc></span>
+                                    </div>
+                                </div>
+                            </div>
+
+
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-default" data-dismiss="modal"><g:message code="no" /></button>
+                                <button type="submit" class="btn btn-danger"><g:message code="delete.project.now.button" /></button>
+                            </div>
+                        </div><!-- /.modal-content -->
+                    </div><!-- /.modal-dialog -->
+                </div>
+
+
+                </g:form>
+
+        </div>
+
+    </div>
+
+
+</div>
+</g:if>
+
+<g:if test="${authImport}">
+<div class="tab-pane" id="import">
+    <g:form controller="project" action="importArchive" params="[project:params.project ?: request.project]"
+            useToken="true"
+            enctype="multipart/form-data" class="form">
+    <div class="list-group list-group-tab-content">
+        <div class="list-group-item">
+            <div class="form-group">
+                <label>
+                    <g:message code="choose.a.rundeck.archive" />
+                    <input type="file" name="zipFile" class="form-control"/>
+                </label>
+
+                <p class="help-block">
+                    <g:message code="archive.import.help" />
+                </p>
+            </div>
+        </div>
+
+        <div class="list-group-item">
+            <h4 class="list-group-item-heading"><g:message code="imported.jobs" /></h4>
+
+            <div class="radio">
+                    <label title="Original UUIDs will be preserved, conflicting UUIDs will be replaced">
+                        <input type="radio" name="jobUuidOption" value="preserve" checked />
+                        <g:message code="project.archive.import.jobUuidOption.preserve.label"/>
+                    </label>
+
+                <p class="help-block"><g:message
+                        code="project.archive.import.jobUuidOption.preserve.description"/></p>
+            </div>
+            <div class="radio">
+                <label title="New UUIDs will be generated for every imported Job">
+                    <input type="radio" name="jobUuidOption" value="remove"/>
+                    <g:message code="project.archive.import.jobUuidOption.remove.label"/>
+                </label>
+
+                <p class="help-block"><g:message
+                        code="project.archive.import.jobUuidOption.remove.description"/></p>
+            </div>
+        </div>
+
+        <div class="list-group-item">
+            <h4 class="list-group-item-heading"><g:message code="Execution.plural" /></h4>
+
+            <div class="radio">
+                <label title="All executions and reports will be imported">
+                    <input type="radio" name="importExecutions" value="true" checked/>
+                    <g:message code="archive.import.importExecutions.true.title" />
+                </label>
+                <span class="help-block"><g:message code="archive.import.importExecutions.true.help" /></span>
+            </div>
+
+            <div class="radio">
+                <label title="No executions or reports will be imported">
+                    <input type="radio" name="importExecutions" value="false"/>
+                    <g:message code="archive.import.importExecutions.false.title" />
+                </label>
+                <span class="help-block"><g:message code="archive.import.importExecutions.false.help" /></span>
+            </div>
+        </div>
+        <div class="list-group-item">
+            <h4 class="list-group-item-heading">Configuration</h4>
+
+            <div class="radio">
+                <label title="">
+                    <input type="radio" name="importConfig" value="true" checked/>
+                    <g:message code="archive.import.importConfig.true.title" />
+                </label>
+                <span class="help-block">
+                    <g:message code="archive.import.importConfig.true.help" />
+                </span>
+            </div>
+
+            <div class="radio">
+                <label title="">
+                    <input type="radio" name="importConfig" value="false"/>
+
+                    <g:message code="archive.import.importExecutions.false.title" />
+
+                </label>
+                <span class="help-block">
+                    <g:message code="archive.import.importConfig.false.help" />
+                </span>
+            </div>
+        </div>
+        <auth:resourceAllowed action="${[AuthConstants.ACTION_CREATE,AuthConstants.ACTION_ADMIN]}"
+                              any="true"
+                              context='application'
+                              type="project_acl"
+                              name="${params.project}">
+            <div class="list-group-item">
+                <h4 class="list-group-item-heading">ACL Policies</h4>
+
+                <div class="radio">
+                    <label title="">
+                        <input type="radio" name="importACL" value="true" checked/>
+                        <g:message code="archive.import.importACL.true.title" />
+                    </label>
+                    <span class="help-block">
+                        <g:message code="archive.import.importACL.true.help" />
+                    </span>
+                </div>
+
+                <div class="radio">
+                    <label title="">
+                        <input type="radio" name="importACL" value="false"/>
+
+                        <g:message code="archive.import.importExecutions.false.title" />
+
+                    </label>
+                    <span class="help-block">
+                        <g:message code="archive.import.importACL.false.help" />
+                    </span>
+                </div>
+            </div>
+        </auth:resourceAllowed>
+        <auth:resourceAllowed action="${[AuthConstants.ACTION_CREATE,AuthConstants.ACTION_ADMIN]}"
+                              any="true"
+                              context='application'
+                              type="project_acl"
+                                has="false"
+                              name="${params.project}">
+            <div class="list-group-item">
+                <h4 class="list-group-item-heading">ACL Policies</h4>
+
+
+                <span class="help-block">
+                    <i class="glyphicon glyphicon-ban-circle"></i>
+                    <g:message code="archive.import.importACL.unauthorized.help" />
+                </span>
+            </div>
+        </auth:resourceAllowed>
+        <div class="list-group-item">
+            <div class="buttons">
+                <div id="uploadFormButtons">
+                    <g:actionSubmit id="createFormCancelButton" value="Cancel" class="btn btn-default"/>
+                    <g:actionSubmit action="importArchive" value="Import" id="uploadFormUpload"
+                                    onclick="['uploadFormButtons','importUploadSpinner'].each(Element.toggle)"
+                                    class="btn btn-primary"/>
+                </div>
+
+                <div id="importUploadSpinner" class="spinner block" style="display:none;">
+                    <img src="${resource(dir: 'images', file: 'icon-tiny-disclosure-waiting.gif')}"
+                         alt="Spinner"/>
+                    <g:message code="uploading.file" />
+                </div>
+            </div>
+        </div>
         </div>
     </div>
+    </g:form>
+</div>
+</g:if>
+</div>
+</div>
+</div>
 </div>
 </body>
 </html>

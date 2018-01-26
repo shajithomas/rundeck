@@ -22,48 +22,9 @@ import java.util.Collection;
 import java.util.Properties;
 
 /**
- * A set of interfaces for managing a set of Depots
+ * A set of interfaces for managing a set of Projects
  */
-public interface IFrameworkProjectMgr extends IFrameworkResourceParent, IPropertyLookup {
-
-    /**
-     * Gets the instance of the framework for this resource mgr
-     *
-     * @return Framework instance
-     */
-    Framework getFramework();
-
-    /**
-     * List all current {@link FrameworkProject} objects
-     *
-     * @return a Collection of {@link FrameworkProject} instances
-     */
-    Collection listFrameworkProjects();
-
-    /**
-     * Get the specified existing project
-     *
-     * @param name Depot name
-     * @return {@link FrameworkProject} instance
-     */
-    FrameworkProject getFrameworkProject(String name);
-
-    /**
-     * Checks if project by that name exists
-     *
-     * @param project project name
-     * @return true if that project exists. false otherwise
-     */
-    boolean existsFrameworkProject(String project);
-
-    /**
-     * checks if project is configured to use resources.properties lookups
-     *
-     * @param projectName name of project
-     * @return true if configured for lookups
-     */
-    boolean isConfiguredObjectDeploymentsCheck(String projectName);
-
+public interface IFrameworkProjectMgr extends ProjectManager {
 
     /**
      * Create a new project. This also creates its structure
@@ -71,14 +32,5 @@ public interface IFrameworkProjectMgr extends IFrameworkResourceParent, IPropert
      * @param projectName Name of project
      * @return newly created {@link FrameworkProject}
      */
-    FrameworkProject createFrameworkProject(String projectName);
-
-    /**
-     * Add a new project to the map. Checks if project has its own module library and creates
-     * a ModuleLookup object accordingly.
-     *
-     * @param projectName Name of the project
-     * @param properties additional properties to include in the project's properties file
-     */
-    FrameworkProject createFrameworkProject(String projectName, Properties properties);
+    FrameworkProject createFSFrameworkProject(String projectName);
 }

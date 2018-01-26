@@ -1,11 +1,13 @@
-<div id="${key.encodeAsHTML()}_tooltip" style="display:none;" class="detailpopup nodedetail ${islocal?'server':''} tooltipcontent" >
+<div id="${enc(attr:key)}_tooltip" style="display:none;" class="detailpopup node_entry ${islocal?'server':''} tooltipcontent node_filter_link_holder"
+     data-node-filter-link-id="${enc(attr:nodefilterLinkId?:'')}" >
     <span >
-        <img src="${resource(dir:'images',file:'icon-small-Node.png')}" alt="Node" width="16px" height="16px"/>
-        ${node.nodename.encodeAsHTML()}
+        <i class="rdicon node ${runnable ? 'node-runnable' : ''} icon-small"></i>
+        <g:enc>${node.nodename}</g:enc>
     </span>
-    <span class="desc">
-        ${node.description?.encodeAsHTML()}
-    </span>
-    
+    <tmpl:nodeFilterLink key="name" value="${node.nodename}"
+                         linkicon="glyphicon glyphicon-circle-arrow-right"/>
+    <span class="nodedesc"></span>
+    <div class="nodedetail">
     <g:render template="/framework/nodeDetailsSimple" bean="${node}" var="node"/>
+    </div>
 </div>

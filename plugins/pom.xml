@@ -2,9 +2,9 @@
 <project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <modelVersion>4.0.0</modelVersion>
-  <groupId>com.dtolabs.rundeck</groupId>
+  <groupId>org.rundeck</groupId>
   <artifactId>rundeck-bundled-plugins</artifactId>
-  <version>1.4.4-dev</version>
+  <version>2.6.8-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>RunDeck Bundled Plugins</name>
   <url>http://rundeck.org</url>
@@ -24,9 +24,9 @@
         <configuration>
           <archive>
             <manifestEntries>
-              <Rundeck-Plugin-Version>1.0</Rundeck-Plugin-Version>
+              <Rundeck-Plugin-Version>1.1</Rundeck-Plugin-Version>
               <Rundeck-Plugin-Archive>true</Rundeck-Plugin-Archive>
-              <Rundeck-Plugin-File-Version>1.4.4-dev</Rundeck-Plugin-File-Version>
+              <Rundeck-Plugin-File-Version>2.6.8-SNAPSHOT</Rundeck-Plugin-File-Version>
             </manifestEntries>
           </archive>
         </configuration>
@@ -35,8 +35,8 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>2.3.2</version>
         <configuration>
-          <source>1.6</source>
-          <target>1.6</target>
+          <source>1.7</source>
+          <target>1.7</target>
         </configuration>
       </plugin>
     </plugins>
@@ -44,12 +44,14 @@
   <modules>
     <module>stub-plugin</module>
     <module>script-plugin</module>
+    <module>localexec-plugin</module>
+    <module>copyfile-plugin</module>
   </modules>
   <dependencies>
     <dependency>
-      <groupId>com.dtolabs.rundeck</groupId>
+      <groupId>org.rundeck</groupId>
       <artifactId>rundeck-core</artifactId>
-      <version>1.4.4-dev</version>
+      <version>2.6.8-SNAPSHOT</version>
     </dependency>
   </dependencies>
 </project>

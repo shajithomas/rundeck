@@ -23,17 +23,21 @@
 */
 package com.dtolabs.rundeck.core.cli.queue;
 
+import com.dtolabs.client.services.DispatcherConfig;
 import com.dtolabs.rundeck.core.Constants;
 import com.dtolabs.rundeck.core.cli.*;
-import com.dtolabs.rundeck.core.common.Framework;
+import com.dtolabs.rundeck.core.common.FrameworkFactory;
 import com.dtolabs.rundeck.core.dispatcher.*;
 import com.dtolabs.rundeck.core.execution.BaseLogger;
+import com.dtolabs.rundeck.core.utils.IPropertyLookup;
 import org.apache.commons.cli.CommandLine;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 
+import java.io.File;
 import java.io.PrintStream;
 import java.util.Collection;
+import java.util.List;
 
 /**
  * QueueTool is ...
@@ -41,7 +45,9 @@ import java.util.Collection;
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  * @version $Revision$
  */
-public class QueueTool extends BaseTool implements CLIToolLogger {
+public class QueueTool extends BaseTool implements CLIToolLogger, Paging {
+    static final long WAIT_BASE_DELAY = Long.getLong(QueueTool.class.getName() + ".WAIT_BASE_DELAY", 1000L);
+    static final long WAIT_MAX_DELAY = Long.getLong(QueueTool.class.getName() + ".WAIT_MAX_DELAY", 5000L);
     /**
      * log4j
      */
@@ -148,15 +154,21 @@ public class QueueTool extends BaseTool implements CLIToolLogger {
     private boolean argQuiet;
     private boolean argProgress;
     private boolean argRestart;
+    int argOffset=0;
+    int argMax=20;
     private CLIToolLogger clilogger;
     String argProject;
 
 
-    /**
-     * Reference to the Framework instance
-     */
-    private final Framework framework;
-    SingleProjectResolver internalResolver;
+    @Override
+    public int getOffset() {
+        return argOffset;
+    }
+
+    @Override
+    public int getMax() {
+        return argMax;
+    }
 
     /**
      * Creates an instance and executes {@link #run(String[])}.
@@ -168,7 +180,7 @@ public class QueueTool extends BaseTool implements CLIToolLogger {
     public static void main(final String[] args) throws Exception {
         
         PropertyConfigurator.configure(Constants.getLog4jPropertiesFile().getAbsolutePath());
-        final QueueTool tool = new QueueTool(new DefaultCLIToolLogger());
+        final QueueTool tool = new QueueTool(createDefaultDispatcherConfig(), new DefaultCLIToolLogger());
         tool.setShouldExit(true);
         int exitCode = 1; //pessimistic initial value
 
@@ -189,10 +201,13 @@ public class QueueTool extends BaseTool implements CLIToolLogger {
     }
 
     /**
-     * Create QueueTool with default Framework instances located by the system rdeck.base property.
+     * Create QueueTool with default framework properties located by the system rdeck.base property.
      */
     public QueueTool() {
-        this(Framework.getInstance(Constants.getSystemBaseDir()), new Log4JCLIToolLogger(log4j));
+        this(
+                FrameworkFactory.createFilesystemFramework(new File(Constants.getSystemBaseDir())).getPropertyLookup(),
+                new Log4JCLIToolLogger(log4j)
+        );
     }
 
     protected boolean isUseHelpOption() {
@@ -212,27 +227,32 @@ public class QueueTool extends BaseTool implements CLIToolLogger {
      * @param logger the logger
      */
     public QueueTool(final CLIToolLogger logger) {
-        this(Framework.getInstance(Constants.getSystemBaseDir()), logger);
+        this(
+                FrameworkFactory.createFilesystemFramework(new File(Constants.getSystemBaseDir())).getPropertyLookup(),
+                logger
+        );
     }
     
     /**
      * Create QueueTool specifying the framework
      *
-     * @param framework framework
+     * @param frameworkProperties framework properties
      */
-    public QueueTool(final Framework framework) {
-        this(framework, null);
+    public QueueTool(final IPropertyLookup frameworkProperties) {
+        this(frameworkProperties, null);
     }
 
     /**
      * Create QueueTool with the framework.
      *
-     * @param framework the framework
+     * @param frameworkProperties framework properties
      * @param logger    the logger
      */
-    public QueueTool(final Framework framework, final CLIToolLogger logger) {
-        this.framework = framework;
-        internalResolver=new FrameworkSingleProjectResolver(framework);
+    public QueueTool(final IPropertyLookup frameworkProperties, final CLIToolLogger logger) {
+        this(FrameworkFactory.createDispatcherConfig(frameworkProperties), logger);
+    }
+    public QueueTool(final DispatcherConfig dispatcherConfig, final CLIToolLogger logger) {
+        setCentralDispatcher(FrameworkFactory.createDispatcher(dispatcherConfig));
         this.clilogger = logger;
         if (null == clilogger) {
             clilogger = new Log4JCLIToolLogger(log4j);
@@ -253,6 +273,10 @@ public class QueueTool extends BaseTool implements CLIToolLogger {
         public static final String PROGRESS_OPTION_LONG = "progress";
         public static final String EXECID_OPTION = "e";
         public static final String EXECID_OPTION_LONG = "eid";
+        public static final String MAX_OPTION = "m";
+        public static final String MAX_OPTION_LONG = "max";
+        public static final String OFFSET_OPTION = "o";
+        public static final String OFFSET_OPTION_LONG = "offset";
         /**
          * short option string for verbose
          */
@@ -274,6 +298,8 @@ public class QueueTool extends BaseTool implements CLIToolLogger {
             options.addOption(PROGRESS_OPTION, PROGRESS_OPTION_LONG, false, "Progress mark output (follow only)");
             options.addOption(PROJECT_OPTION, null, true, "Project name (list action only)");
             options.addOption(RESTART_OPTION, RESTART_OPTION_LONG, false, "Restart log output from beginning (follow action only)");
+            options.addOption(MAX_OPTION, MAX_OPTION_LONG, true, "Maximum result count. Default 20. (list action only)");
+            options.addOption(OFFSET_OPTION, OFFSET_OPTION_LONG, true, "First result offset. Default 0. (list action only)");
         }
 
         public void parseArgs(final CommandLine cli, final String[] original) throws CLIToolOptionsException {
@@ -295,6 +321,12 @@ public class QueueTool extends BaseTool implements CLIToolLogger {
             if (cli.hasOption(PROGRESS_OPTION)) {
                 argProgress = true;
             }
+            if (cli.hasOption(MAX_OPTION)) {
+                argMax = Integer.parseInt(cli.getOptionValue(MAX_OPTION));
+            }
+            if (cli.hasOption(OFFSET_OPTION)) {
+                argOffset = Integer.parseInt(cli.getOptionValue(OFFSET_OPTION));
+            }
         }
 
         public void validate(final CommandLine cli, final String[] original) throws CLIToolOptionsException {
@@ -312,8 +344,12 @@ public class QueueTool extends BaseTool implements CLIToolLogger {
                 warn("-"+ EXECID_OPTION +"/--"+ EXECID_OPTION_LONG +" argument only valid with kill/follow actions");
             }
             if(null==argProject){
-                if (internalResolver.hasSingleProject()) {
-                    argProject = internalResolver.getSingleProjectName();
+                try {
+                    argProject = getSingleProjectName();
+                } catch (CentralDispatcherException e) {
+                    throw new CLIToolOptionsException("Could not determine project: " + e.getMessage(), e);
+                }
+                if (null!=argProject) {
                     debug("# No project specified, defaulting to: " + argProject);
                 } else {
                     throw new CLIToolOptionsException("-" + PROJECT_OPTION + " argument is required with list action");
@@ -342,6 +378,14 @@ public class QueueTool extends BaseTool implements CLIToolLogger {
             return execid;
         }
     }
+    private String getSingleProjectName() throws CentralDispatcherException {
+        List<String> strings = getCentralDispatcher().listProjectNames();
+        if(strings.size()==1) {
+            return strings.get(0);
+        }
+        return null;
+    }
+
 
     /**
      * Reads the argument vector and constructs a {@link org.apache.commons.cli.CommandLine} object containing params
@@ -395,7 +439,7 @@ public class QueueTool extends BaseTool implements CLIToolLogger {
     private void killAction(final String execid) throws QueueToolException {
         final DispatcherResult result;
         try {
-            result = framework.getCentralDispatcherMgr().killDispatcherExecution(execid);
+            result = getDispatcher().killDispatcherExecution(execid);
         } catch (CentralDispatcherException e) {
             final String msg = "Failed request to kill the execution: " + e.getMessage();
             throw new QueueToolException(msg, e);
@@ -407,30 +451,37 @@ public class QueueTool extends BaseTool implements CLIToolLogger {
         }
     }
 
+    private CentralDispatcher getDispatcher() {
+        return getCentralDispatcher();
+    }
+
     /**
      * Perform the list action and print the results.
      *
      * @throws QueueToolException if an error occurs
      */
     private void listAction() throws QueueToolException {
-        final Collection<QueuedItem> result;
+        final PagedResult<QueuedItem> result;
         try {
-            result = framework.getCentralDispatcherMgr().listDispatcherQueue(argProject);
+            result = getDispatcher().listDispatcherQueue(argProject, this);
         } catch (CentralDispatcherException e) {
             final String msg = "Failed request to list the queue: " + e.getMessage();
             throw new QueueToolException(msg, e);
         }
         if (null != result) {
-            log("Queue: " + result.size() + " items");
-            for (final QueuedItem item : result) {
+            log(
+                    "Queue: " +
+                    result.getResults().size() +
+                    (result.getTotal() > -1 ? " of " + result.getTotal() : "") +
+                    " items"
+            );
+            for (final QueuedItem item : result.getResults()) {
                 final String url = item.getUrl();
                 log("[" + item.getId() + "] " + item.getName() + " <" + url + ">");
             }
         } else {
             throw new QueueToolException("List request returned null");
         }
-
-
     }
 
     private void followAction(final String execid) throws QueueToolException {
@@ -441,7 +492,10 @@ public class QueueTool extends BaseTool implements CLIToolLogger {
             mode= ConsoleExecutionFollowReceiver.Mode.progress;
         }
         try {
-            followAction(execid, argRestart, mode, framework, System.out, this);
+            followAction(execid, argRestart, mode,
+                         System.out, this,
+                         getCentralDispatcher()
+            );
         } catch (CentralDispatcherException e) {
             final String msg = "Failed request to follow the execution: " + e.getMessage();
             throw new QueueToolException(msg, e);
@@ -452,22 +506,26 @@ public class QueueTool extends BaseTool implements CLIToolLogger {
      * Perform the Follow action for an Execution
      *
      * @param mode follow mode
-     * @param framework framework
      * @param out output for progress marks
      * @param logger logger for output of log lines
+     * @param dispatcher dispatcher
      * @param execid the execution id
+     * @param restart true to restart the output
      *
      * @throws CentralDispatcherException if any error occurs
+     * @return true if execution was successful
      */
-    public static boolean followAction(final String execid,
-                              final boolean restart,
-                              final ConsoleExecutionFollowReceiver.Mode mode,
-                              final Framework framework,
-                              final PrintStream out, final BaseLogger logger)
+    public static boolean followAction(
+            final String execid,
+            final boolean restart,
+            final ConsoleExecutionFollowReceiver.Mode mode,
+            final PrintStream out, final BaseLogger logger, final CentralDispatcher dispatcher
+    )
         throws CentralDispatcherException {
 
         final ExecutionFollowResult result;
-        ExecutionDetail execution = framework.getCentralDispatcherMgr().getExecution(execid);
+        ExecutionDetail execution = dispatcher
+                                                    .getExecution(execid);
         final long averageDuration;
         if(null!=execution.getExecutionJob()){
             averageDuration=execution.getExecutionJob().getAverageDuration();
@@ -481,28 +539,56 @@ public class QueueTool extends BaseTool implements CLIToolLogger {
                                                                                            mode,
                                                                                            out,
                                                                                            logger);
-        result = framework.getCentralDispatcherMgr().followDispatcherExecution(execid,
+        result = dispatcher.followDispatcherExecution(execid,
                                                                                 request,
                                                                                 receiver);
         if (mode != ConsoleExecutionFollowReceiver.Mode.output) {
             out.println();
         }
-        if(null!=result.getState()){
-            String message = "[" + execid + "] execution status: " + result.getState();
-            switch (result.getState()){
+        ExecutionState state = result.getState();
+        if (null != state) {
+            if (state == ExecutionState.running) {
+                state = awaitExecutionCompletion(
+                        execid,
+                        dispatcher
+                );
+            }
+            if (mode != ConsoleExecutionFollowReceiver.Mode.quiet) {
+                logger.warn("[" + execid + "] execution status: " + state);
+            }
+            switch (state) {
                 case failed:
                 case aborted:
-                    if (mode != ConsoleExecutionFollowReceiver.Mode.quiet) {
-                        logger.warn(message);
-                    }
                     return false;
-                default:
-                    if (mode != ConsoleExecutionFollowReceiver.Mode.quiet) {
-                        logger.verbose(message);
-                    }
             }
         }
         return true;
+    }
+
+    private static ExecutionState awaitExecutionCompletion(
+            String execid, final CentralDispatcher dispatcher
+    ) throws CentralDispatcherException {
+        ExecutionState state = executionStatus(execid, dispatcher);
+        long delay= WAIT_BASE_DELAY;
+        while (state == ExecutionState.running) {
+            try {
+                Thread.sleep(delay);
+            } catch (InterruptedException e) {
+                return state;
+            }
+            if (delay < WAIT_MAX_DELAY) {
+                delay += WAIT_BASE_DELAY;
+            }
+            state = executionStatus(execid, dispatcher);
+        }
+        return state;
+    }
+
+    private static ExecutionState executionStatus(
+            String execid, final CentralDispatcher dispatcher
+    ) throws CentralDispatcherException {
+        ExecutionDetail execution = dispatcher.getExecution(execid);
+        return execution.getStatus();
     }
 
 

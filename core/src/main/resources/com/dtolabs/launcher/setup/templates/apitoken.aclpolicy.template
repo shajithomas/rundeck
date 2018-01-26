@@ -5,7 +5,7 @@ for:
   resource:
     - equals:
         kind: job
-      allow: [create] # allow create jobs
+      allow: [create,delete] # allow create and delete jobs
     - equals:
         kind: node
       allow: [read,create,update,refresh] # allow refresh node sources
@@ -35,5 +35,9 @@ for:
     - match:
         name: '.*'
       allow: [read] # allow view of all projects
+  storage:
+    - match:
+        path: '(keys|keys/.*)'
+      allow: '*' # allow all access to manage stored keys
 by:
   group: api_token_group

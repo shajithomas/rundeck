@@ -24,6 +24,11 @@
 package com.dtolabs.rundeck.core.execution.dispatch;
 
 import com.dtolabs.rundeck.core.common.INodeEntry;
+import com.dtolabs.rundeck.core.execution.workflow.steps.node.NodeStepException;
+import com.dtolabs.rundeck.core.execution.workflow.steps.node.NodeStepResult;
+
+import java.util.Map;
+
 
 /**
  * DispatcherException is ...
@@ -32,38 +37,25 @@ import com.dtolabs.rundeck.core.common.INodeEntry;
  */
 public class DispatcherException extends Exception {
     private INodeEntry node;
-
-    public DispatcherException() {
-    }
+    private NodeStepException nodeStepException;
 
     public DispatcherException(String s) {
         super(s);
-    }
-
-    public DispatcherException(String s, Throwable throwable) {
-        super(s, throwable);
     }
 
     public DispatcherException(Throwable throwable) {
         super(throwable);
     }
 
-    public DispatcherException(INodeEntry node) {
-        this.node = node;
-    }
-
-    public DispatcherException(String s, INodeEntry node) {
-        super(s);
-        this.node = node;
-    }
-
-    public DispatcherException(String s, Throwable throwable, INodeEntry node) {
+    public DispatcherException(String s, NodeStepException throwable, INodeEntry node) {
         super(s, throwable);
+        nodeStepException=throwable;
         this.node = node;
     }
 
-    public DispatcherException(Throwable throwable, INodeEntry node) {
+    public DispatcherException(NodeStepException throwable, INodeEntry node) {
         super(throwable);
+        nodeStepException=throwable;
         this.node = node;
     }
 
@@ -73,5 +65,9 @@ public class DispatcherException extends Exception {
 
     public void setNode(INodeEntry node) {
         this.node = node;
+    }
+
+    public NodeStepException getNodeStepException() {
+        return nodeStepException;
     }
 }

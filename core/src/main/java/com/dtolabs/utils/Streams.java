@@ -41,10 +41,11 @@ public class Streams {
      * @param in  inputstream
      * @param out outpustream
      *
+     * @return bytes copied
      * @throws java.io.IOException if thrown by underlying io operations
      */
-    public static void copyStream(final InputStream in, final OutputStream out) throws IOException {
-        copyStreamCount(in, out);
+    public static long copyStream(final InputStream in, final OutputStream out) throws IOException {
+        return copyStreamCount(in, out);
     }
 
     /**
@@ -58,6 +59,29 @@ public class Streams {
      */
     public static int copyStreamCount(final InputStream in, final OutputStream out) throws IOException {
         final byte[] buffer = new byte[10240];
+        int tot=0;
+        int c;
+        c = in.read(buffer);
+        while (c >= 0) {
+            if (c > 0) {
+                out.write(buffer, 0, c);
+                tot += c;
+            }
+            c = in.read(buffer);
+        }
+        return tot;
+    }
+    /**
+     * Read the data from the reader and copy to the writer.
+     *
+     * @param in  inputstream
+     * @param out outpustream
+     *            @return number of bytes copied
+     *
+     * @throws java.io.IOException if thrown by underlying io operations
+     */
+    public static int copyWriterCount(final Reader in, final Writer out) throws IOException {
+        final char[] buffer = new char[10240];
         int tot=0;
         int c;
         c = in.read(buffer);
@@ -89,6 +113,7 @@ public class Streams {
         public void run() {
             try {
                 Streams.copyStream(in, out);
+                out.flush();
             } catch (IOException e) {
                 exception = e;
             }

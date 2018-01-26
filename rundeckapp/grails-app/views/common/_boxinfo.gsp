@@ -1,11 +1,9 @@
-
+<g:set var="boxrkey" value="${g.rkey()}"/>
+<% response.addHeader("X-Rundeck-data-id", "box_data_${boxrkey}") %>
+<g:embedJSON id="box_data_${boxrkey}" data="${[name:name,content: model]}"/>
 <script type="text/javascript">
-    boxdata={
-        <g:each in="${model}" var="item" status="i">
-        <g:if test="${i>0}">,</g:if>${item.key.encodeAsJavaScript()}: "${item?.value?.encodeAsJavaScript()}"
-        </g:each>
-    };
     if(typeof(_updateBoxInfo)=='function'){
-        _updateBoxInfo('${name}',boxdata);
+        var data= loadJsonData('box_data_${enc(js:boxrkey)}');
+        _updateBoxInfo(data.name,data.content);
     }
 </script>

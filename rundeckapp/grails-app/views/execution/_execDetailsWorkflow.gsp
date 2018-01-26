@@ -22,30 +22,45 @@
    $Id$
 --%>
 <g:set var="rkey" value="${g.rkey()}"/>
+<g:unless test="${isAdhoc}">
+<g:if test="${edit}">
 <div>
-    <span class="label" title="Continue execution if any steps fail.">Keepgoing:</span>
-    <g:if test="${edit}">
-        <label><input type="radio" name="workflow.keepgoing" value="false" ${workflow?.keepgoing?'':'checked'}/> No</label>
-        <label><input type="radio" name="workflow.keepgoing" value="true" ${workflow?.keepgoing?'checked':''}/> Yes</label>
-    </g:if>
-    <g:else>
-        ${workflow?.keepgoing?true:false}
-    </g:else>
-    </div>
+    <span class=""><g:message code="Workflow.property.keepgoing.prompt" /></span>
+    <label>
+        <input type="radio" name="workflow.keepgoing" value="false" ${workflow?.keepgoing?'':'checked'}/>
+        <g:message code="Workflow.property.keepgoing.false.description"/>
+    </label>
+    <label>
+        <input type="radio" name="workflow.keepgoing" value="true" ${workflow?.keepgoing?'checked':''}/>
+        <g:message code="Workflow.property.keepgoing.true.description"/>
+    </label>
+</div>
 <div>
-    <span class="label" title="Strategy for iteration">Strategy:</span>
-    <g:if test="${edit}">
+
+    <span class="" title="Strategy for iteration"><g:message code="strategy" />:</span>
         <label title="Execute the full workflow on each node before the next node">
-            <input type="radio" name="workflow.strategy" value="node-first" ${!workflow?.strategy||workflow?.strategy=='node-first'?'checked':''}/>
+            <input id="wf_strat_node_first" type="radio" name="workflow.strategy" value="node-first" ${!workflow?.strategy||workflow?.strategy=='node-first'?'checked':''}/>
             <g:message code="Workflow.strategy.label.node-first"/>
         </label>
         <label title="Execute each step on all nodes before the next step">
             <input type="radio" name="workflow.strategy" value="step-first" ${workflow?.strategy=='step-first'?'checked':''}/>
             <g:message code="Workflow.strategy.label.step-first"/>
         </label>
+        <g:if test="${workflow?.strategy == 'parallel' || grailsApplication.config.feature?.incubator?.parallelWorkflowStrategy in [true,'true']}">
+        <label title="Execute each step in parallel across all nodes before next step">
+            <input type="radio" name="workflow.strategy" value="parallel" ${workflow?.strategy=='parallel'?'checked':''}/>
+            <g:message code="Workflow.strategy.label.parallel"/>
+        </label>
+        </g:if>
 
-        <span class=" action obs_tooltip" id="nodeStratHelp"><g:img file="icon-small-help.png" width="16px" height="16px"/> Explain </span>
-        <div class="popout tooltipcontent" id="nodeStratHelp_tooltip" style="display:none; background:white; position:absolute;">
+    <span id="nodeStratHelp"
+          data-toggle="popover"
+          data-popover-content-ref="#nodeStratHelp_tooltip"
+          data-placement="bottom"
+          data-trigger="hover"
+    ><i
+            class="glyphicon glyphicon-question-sign text-info"></i> Explain </span>
+        <div class="" id="nodeStratHelp_tooltip" style="display:none; background:white;">
             <style type="text/css">
                 td.nodea{
                     color:blue;
@@ -59,9 +74,12 @@
                 <tr>
                     <td width="200px;">
 
-                <span class="info note">Node-oriented executes the full workflow on each each node before the next node</span>
+                <span class="text-muted">Node-oriented: <g:message code="Workflow.strategy.description.node-first"/></span>
                     </td>
-                    <td width="200px;"><span class="info note">Step-oriented executes each step on all nodes before the next step</span></td>
+                    <td width="200px;"><span class="text-muted">Step-oriented: <g:message code="Workflow.strategy.description.step-first" /></span></td>
+                <g:if test="${workflow?.strategy == 'parallel' || grailsApplication.config.feature?.incubator?.parallelWorkflowStrategy in [true, 'true']}">
+                    <td width="200px;"><span class="text-muted">Parallel executes all steps in parallel across all nodes before the next step</span></td>
+                </g:if>
                 </tr>
                 <tr>
                 <td>
@@ -89,54 +107,88 @@
             </td></tr></table>
         </div>
         <g:javascript>
-            fireWhenReady('nodeStratHelp', initTooltipForElements.curry('.obs_tooltip'));
+            fireWhenReady('nodeStratHelp', _initPopoverContentRef);
         </g:javascript>
-    </g:if>
-    <g:else>
-        <g:message code="Workflow.strategy.label.${workflow?.strategy}"/>
-    </g:else>
-
-%{--<span class="label">threadcount:</span> ${workflow?.threadcount}--}%
 </div>
-<div class="pflowlist ${edit?'edit':''} rounded" style="${edit?'width:600px;':''}">
+</g:if>
+</g:unless>
+<div class="pflowlist ${edit?'edit':''} rounded ${isAdhoc?'adhoc':''}" style="">
     <g:if test="${edit}">
-        <div id="wfundoredo" >
-            <div style="margin-bottom:10px;">
-                <span class="button disabled small">Undo</span>
-                <span class="button disabled small">Redo</span>
-            </div>
+        <div id="wfundoredo" class="undoredocontrols">
+            <g:render template="/common/undoRedoControls" model="[key:'workflow']"/>
         </div>
     </g:if>
     <ol id="wfilist_${rkey}" class="flowlist">
         <g:render template="/execution/wflistContent" model="${[workflow:workflow,edit:edit,noimgs:noimgs,project:project]}"/>
     </ol>
-    <div id="workflowDropfinal" wfitemNum="${workflow?.commands? workflow.commands.size():0}" style="display:none"></div>
+    <div id="workflowDropfinal" data-wfitemnum="${workflow?.commands? workflow.commands.size():0}" style="display:none"></div>
     <div class="empty note ${error?'error':''}" id="wfempty" style="${wdgt.styleVisible(unless:workflow && workflow?.commands)}">
         No Workflow ${g.message(code:'Workflow.step.label')}s
     </div>
     <g:if test="${edit}">
     <div >
-    <div id="wfnewbutton" style="margin-top:5px; padding-left:20px;">
-        <span class="action textbtn ready" onclick="$('wfnewtypes').show();$('wfnewbutton').hide();" title="Add a new Workflow ${g.message(code:'Workflow.step.label')} to the end">
+    <div id="wfnewbutton" style="margin-top:5px;">
+        <span class="btn btn-default btn-sm ready" onclick="$('wfnewtypes').show();$('wfnewbutton').hide();" title="Add a new Workflow ${g.message(code:'Workflow.step.label')} to the end">
+            <b class="glyphicon glyphicon-plus"></b>
             Add a ${g.message(code:'Workflow.step.label')}
         </span>
     </div>
-    <div id="wfnewtypes" style="display:none; margin-top:10px" class="popout">
-        <span > Add a Workflow ${g.message(code:'Workflow.step.label')}</span>
-        <div class="info note">Choose the type of Workflow ${g.message(code:'Workflow.step.label')}:</div>
-        <div style="margin:10px;">
-        <span class="button action" onclick="_wfiaddnew('command');" title="Execute a remote command"><g:img file='icon-tiny-add.png'/> Command</span>
-        <span class="button action" onclick="_wfiaddnew('script');" title="Execute  an inline script"><g:img file='icon-tiny-add.png'/> Script</span>
-        <span class="button action" onclick="_wfiaddnew('scriptfile');" title="Execute a script file or URL"><g:img file='icon-tiny-add.png'/> Script file or URL</span>
-        <span class="button action" onclick="_wfiaddnew('job');" title="Execute another Job"><g:img file='icon-tiny-add.png'/> Job Reference</span>
-        </div>
-        <div style="margin:10px; text-align:right;">
-            <span class="action button small" onclick="$('wfnewtypes').hide();$('wfnewbutton').show();" title="Cancel adding new item"> Cancel</span>
-        </div>
+    <div id="wfnewtypes" style="display:none; margin-top:10px;" class="panel panel-success">
+        <g:render template="/execution/wfAddStep"
+            model="[addMessage:'Workflow.step.label.add',chooseMessage:'Workflow.step.label.choose.the.type']"
+        />
     </div>
+
+    <div id="wfnew_eh_types" style="display:none;  margin-top:10px;" class="panel panel-success">
+        %{--This element is moved around to show the add error-handle buttons for a step--}%
+        <g:render template="/execution/wfAddStep"
+                model="[addMessage:'Workflow.stepErrorHandler.label.add',descriptionMessage:'Workflow.stepErrorHandler.description',chooseMessage:'Workflow.stepErrorHandler.label.choose.the.type']"
+        />
+    </div>
+    </div>
+        <script type="text/javascript">
+            fireWhenReady('wfnew_eh_types',function(){
+                $('wfnew_eh_types').select('.add_step_type').each(function (e) {
+                    Event.observe(e, 'click', _evtNewEHChooseType);
+                });
+                $('wfnew_eh_types').select('.add_node_step_type').each(function (e) {
+                    Event.observe(e, 'click', _evtNewEHNodeStepType);
+                });
+                $('wfnew_eh_types').select('.cancel_add_step_type').each(function (e) {
+                    Event.observe(e, 'click', _evtNewEHCancel);
+                });
+            })
+            fireWhenReady('wfnewtypes', function () {
+                $('wfnewtypes').select('.add_step_type').each(function (e) {
+                    Event.observe(e, 'click', _evtNewStepChooseType);
+                });
+                $('wfnewtypes').select('.add_node_step_type').each(function (e) {
+                    Event.observe(e, 'click', _evtNewNodeStepChooseType);
+                });
+                $('wfnewtypes').select('.cancel_add_step_type').each(function (e) {
+                    Event.observe(e, 'click', _evtNewStepCancel);
+                });
+            })
+        </script>
+</g:if>
+
+</div>
+<g:if test="${!edit && !isAdhoc}">
+    <div>
+    <span class="text-muted text-em">
+        <g:message code="Workflow.property.keepgoing.prompt"/>
+        <strong><g:message
+            code="Workflow.property.keepgoing.${workflow?.keepgoing ? true : false}.description"/></strong>
+    </span>
+    </div>
+    <div>
+    <span class="text-muted text-em">
+        <g:message code="strategy"/>:
+        <strong><g:message code="Workflow.strategy.description.${workflow?.strategy}"/></strong>
+    </span>
+
     </div>
 </g:if>
-</div>
 <div class="clear"></div>
 
 

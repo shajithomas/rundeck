@@ -33,6 +33,9 @@ import java.util.*;
 public class PartialLineBuffer {
     private ArrayList<String> lines = new ArrayList<String>();
     String partialLine = null;
+    /**
+     * new partial line data exists since last read
+     */
     boolean newdata = false;
 
     private void appendString(final String str, final boolean linending) {
@@ -47,6 +50,7 @@ public class PartialLineBuffer {
                     lines.add(partialLine + str);
                 }
                 partialLine = null;
+                newdata = false;
             } else {
                 lines.add(str);
             }
@@ -56,6 +60,7 @@ public class PartialLineBuffer {
                     lines.add(partialLine.substring(0, partialLine.length() - 1));
                     if ("".equals(str)) {
                         partialLine = null;
+                        newdata = false;
                     } else {
                         partialLine = str;
                         newdata = true;
@@ -93,8 +98,14 @@ public class PartialLineBuffer {
 
     /**
      * Add character data to the buffer
+     * @param data data
+     * @param off offset
+     * @param size length
      */
     public void addData(final char[] data, final int off, final int size) {
+        if(size<1){
+            return;
+        }
         final String str = new String(data, off, size);
         if (str.contains("\n")) {
             final String[] lines = str.split("\\r?\\n", -1);
@@ -137,12 +148,20 @@ public class PartialLineBuffer {
     }
 
     /**
-     * Return the last partial line read and mark it
+     * @return the last partial line read and mark it
      */
     public String getPartialLine() {
         return getPartialLine(true);
     }
 
+    /**
+     * Unmark any partial line so it can be read again
+     */
+    public void unmarkPartial(){
+        if(null!=partialLine) {
+            newdata = true;
+        }
+    }
     /**
      * Clear the partial fragment string
      */
@@ -152,8 +171,9 @@ public class PartialLineBuffer {
     }
 
     /**
-     * Return the last partial line read, optionally marking it as already read. Subsequent calls with mark set to true
+     * @return the last partial line read, optionally marking it as already read. Subsequent calls with mark set to true
      * will return null if there as been no new data.
+     * @param mark true to mark it
      */
     public String getPartialLine(final boolean mark) {
         if (mark && newdata) {
@@ -173,7 +193,7 @@ public class PartialLineBuffer {
     }
 
     /**
-     * Read the next line if any, and remove it from the buffer.
+     * @return Read the next line if any, and remove it from the buffer.
      */
     public String readLine() {
         if (lines.size() > 0) {
@@ -184,7 +204,7 @@ public class PartialLineBuffer {
     }
 
     /**
-     * Return the line buffer
+     * @return  the line buffer
      */
     public List<String> getLines() {
         return lines;

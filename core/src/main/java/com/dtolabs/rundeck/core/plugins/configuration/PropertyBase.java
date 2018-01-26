@@ -23,30 +23,49 @@
 */
 package com.dtolabs.rundeck.core.plugins.configuration;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+
 
 /**
-* PropertyBase base implementation of Property
-*
-* @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
-*/
+ * PropertyBase base implementation of Property
+ *
+ * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
+ */
 abstract class PropertyBase implements Property {
     private final String title;
     private final String name;
     private final String description;
     private final boolean required;
     private final String defaultValue;
-    private final Validator validator;
+    private final PropertyValidator validator;
+    private final PropertyScope scope;
+    private final Map<String, Object> renderingOptions;
 
     public PropertyBase(final String name, final String title, final String description, final boolean required,
-                        final String defaultValue, final Validator validator) {
+                        final String defaultValue, final PropertyValidator validator) {
 
+        this(name, title, description, required, defaultValue, validator, null);
+    }
+
+    public PropertyBase(final String name, final String title, final String description, final boolean required,
+                        final String defaultValue, final PropertyValidator validator, final PropertyScope scope) {
+        this(name, title, description, required, defaultValue, validator, scope, null);
+    }
+
+    public PropertyBase(final String name, final String title, final String description, final boolean required,
+                        final String defaultValue, final PropertyValidator validator, final PropertyScope scope,
+                        final Map<String, Object> renderingOptions) {
         this.title = title;
         this.name = name;
         this.description = description;
         this.required = required;
         this.defaultValue = defaultValue;
         this.validator = validator;
+        this.scope = scope;
+        this.renderingOptions = renderingOptions == null ? Collections.<String, Object> emptyMap() : Collections
+                .unmodifiableMap(renderingOptions);
     }
 
     public String getTitle() {
@@ -69,11 +88,35 @@ abstract class PropertyBase implements Property {
         return null;
     }
 
-    public Validator getValidator() {
+    public PropertyValidator getValidator() {
         return validator;
     }
 
     public String getName() {
         return name;
+    }
+
+    @Override
+    public PropertyScope getScope() {
+        return scope;
+    }
+    
+    @Override
+    public Map<String, Object> getRenderingOptions() {
+        return renderingOptions;
+    }
+
+    @Override
+    public String toString() {
+        return "PropertyBase{" +
+               "name='" + name + '\'' +
+               (title != null ? ", title='" + title + '\'' : "") +
+               (description != null ? ", description='" + description + '\'' : "") +
+               ", required=" + required +
+               (defaultValue != null ? ", defaultValue='" + defaultValue + '\'' : "") +
+               (validator != null ? ", validator=" + validator : "") +
+               (scope != null ? ", scope=" + scope : "") +
+               (renderingOptions != null ? ", renderingOptions=" + renderingOptions : "") +
+               '}';
     }
 }

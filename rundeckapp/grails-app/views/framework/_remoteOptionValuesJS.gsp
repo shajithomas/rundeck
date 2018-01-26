@@ -37,12 +37,12 @@
             }
             btn.addClassName('action');
             btn.addClassName('textbtn');
-            if($(elem).innerHTML.indexOf("_error_detail")<0){
-                icn.removeClassName('error');
-                icn.addClassName('ok');
-            }else{
+            if($(elem).down("._error_detail")) {
                 icn.removeClassName('ok');
                 icn.addClassName('error');
+            } else {
+                icn.removeClassName('error');
+                icn.addClassName('ok');
             }
 
             btn.setAttribute('title','Click to reload the remote option values for: '+optName);
@@ -55,7 +55,7 @@
                 }
             }
             if(!$(reloader)){
-                btn.innerHTML='reload';
+                setText(btn,'reload');
                 $(btn).insert({bottom:icn});
                 $(elem).insert({bottom:btn});
             }
@@ -208,8 +208,25 @@ var RemoteOptionControl = Class.create({
         this.setOptionValue(name,value);
         //trigger reload
         if(this.dependents[name] && !this.cyclic){
+            var formOpts;
             for(var i=0;i<this.dependents[name].length;i++){
-                this.loadRemoteOptionValues(this.dependents[name][i])
+                if(!formOpts) { formOpts = Form.serialize(this.formId,true); }
+                var dependentName = this.dependents[name][i];
+                var skip = false;
+                // if any of the dependencies does not have value, and is required, then skip.
+                for(var j=0;j<this.dependencies[dependentName].length;j++){
+                    var dependencyName = this.dependencies[dependentName][j];
+                    if(! formOpts['extra.option.'+dependencyName]) {
+                        var reqSigns = $$('#'+dependencyName+'_state .reqwarning');
+                        if (reqSigns.length > 0 && reqSigns[0].visible()) {
+                            skip = true;
+                            break;
+                        }
+                    }
+                }
+                if (!skip) {
+                    this.loadRemoteOptionValues(this.dependents[name][i])
+                }
             }
         }
     },
@@ -265,13 +282,10 @@ var RemoteOptionControl = Class.create({
             var elem = $(this.options[name][0]);
             if(!elem.down('div.emptyMessage')){
                 //wrap elem contents and hide it
-                elem.innerHTML = "<div style='display:none' class='fieldcontent'>"+elem.innerHTML+"</div>";
+                jQuery(elem).wrapInner("<div style='display:none' class='fieldcontent'></div>");
                 //insert note
-                var note = new Element('div',{class:'info note emptyMessage'});
-                note.appendChild(document.createTextNode('Select a value for these options: '));
-                if(this.dependencies[name]){
-                    note.appendChild(document.createTextNode(this.dependencies[name].join(', ')));
-                }
+                var note = new Element('div',{'class':'info note emptyMessage'});
+                note.appendChild(document.createTextNode('No values to choose from. '));
                 elem.insert({top:note});
             }
         }
@@ -307,16 +321,13 @@ var RemoteOptionControl = Class.create({
         this.stopObserving(name);
         var id = this.ids[name];
 
-        if (!id) {
+        if (!id || !$(id)) {
             return;
-        }
-        if (!$(id)) {
-            throw "not found: " + id;
         }
         var roc = this;
         //observe field value change and trigger reloads
-        this.observers[name] = new Form.Element.Observer(id, this.observeFreq, function (evt, value) {
-            roc.optionValueChanged(name, value);
+        this.observers[name] = Event.observe(id, 'change', function(evt) {
+            roc.optionValueChanged(name, this.value);
         });
     },
     onStartObserve:function(){
@@ -343,7 +354,8 @@ var RemoteOptionControl = Class.create({
     },
     stopObserving: function(name){
         if (this.observers[name]) {
-            this.observers[name].stop();
+            var id = this.ids[name];
+            Event.stopObserving(id,'change');
             this.observers[name]=null;
         }
     },
@@ -358,6 +370,41 @@ var RemoteOptionControl = Class.create({
         }
         this.observers={};
         _unloadRemoteOptionControl(this.formId);
+    },
+    /**
+    * load remote option dataset from json data
+    * @param data
+     */
+    loadData:function(data){
+        for(var opt in data){
+            var params=data[opt];
+            if(params['optionDependencies']){
+                this.addOptionDependencies(opt,params['optionDependencies']);
+            }
+            if(params['optionDeps']){
+                this.addOptionDeps(opt,params['optionDeps']);
+            }
+            if(params['optionAutoReload']){
+                this.setOptionAutoReload(opt,params['optionAutoReload']);
+            }
+            if(params['hasUrl']){
+                this.addOption(opt, params['holder'], params['scheduledExecutionId'], opt, params['usePrefix'], params['selectedOptsMap'], params['fieldNameKey'], true);
+                if(params['loadonstart']){
+                    this.loadonstart[opt]=true;
+                }
+                if(params['optionAutoReload']){
+                    this.setOptionAutoReload(opt, true);
+                }
+                if(params['fieldMultiId']){
+                    this.setFieldMultiId(opt,params['fieldMultiId']);
+                }
+                if(params['fieldId']){
+                    this.setFieldId(opt,params['fieldId']);
+                }
+            }else{
+                this.addLocalOption(opt);
+            }
+        }
     }
 });
         /**

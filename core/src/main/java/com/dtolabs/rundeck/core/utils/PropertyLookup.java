@@ -15,6 +15,8 @@
  */
 package com.dtolabs.rundeck.core.utils;
 
+import com.dtolabs.rundeck.core.common.PropertyRetriever;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -31,9 +33,24 @@ public class PropertyLookup implements IPropertyLookup {
      * Properties instance where data will be kept in memory
      */
     final Properties properties;
+    final File propsFile;
+    volatile boolean deferred;
 
+    private PropertyLookup(final File propsFile, final boolean deferred) {
+        properties = new Properties();
+        this.propsFile=propsFile;
+        this.deferred=deferred;
+    }
     private PropertyLookup(final Properties props) {
         properties = props;
+        this.propsFile=null;
+        this.deferred=false;
+    }
+    private PropertyLookup(final Map props) {
+        properties = new Properties();
+        properties.putAll(props);
+        this.propsFile=null;
+        this.deferred=false;
     }
 
     public static PropertyLookup create(final Properties props) {
@@ -57,6 +74,17 @@ public class PropertyLookup implements IPropertyLookup {
         this(props);
         properties.putAll(difference(defaults));
     }
+    /**
+     * Calls base constructor then reads defaults map. Properties which are NOT contained
+     * in the internal store, will be accepted and added.
+     *
+     * @param props    Property set
+     * @param defaults Map of default properties
+     */
+    private PropertyLookup(final Map props, final Map defaults) {
+        this(props);
+        properties.putAll(difference(defaults));
+    }
 
     /**
      * Calls base constructor with data from IPropertyLookup paramater as defaults. Defaults
@@ -67,6 +95,17 @@ public class PropertyLookup implements IPropertyLookup {
      */
     private PropertyLookup(final Properties props, final IPropertyLookup defaultsLookup) {
         this(props, defaultsLookup.getPropertiesMap());
+    }
+
+    /**
+     * Calls base constructor with data from IPropertyLookup paramater as defaults. Defaults
+     * data is read via the {@link IPropertyLookup#getPropertiesMap()} method.
+     *
+     * @param props          Property set
+     * @param defaultsLookup IPropertyLookup of default properties
+     */
+    private PropertyLookup(final IPropertyLookup props, final IPropertyLookup defaultsLookup) {
+        this(props.getPropertiesMap(), defaultsLookup.getPropertiesMap());
     }
 
     /**
@@ -82,13 +121,20 @@ public class PropertyLookup implements IPropertyLookup {
     }
 
     /**
-     * Factory method to create a property lookup object
+     * @return Factory method to create a property lookup object
      *
      * @param propFile File where proeprty data is contained
-     * @return
      */
     public static PropertyLookup create(final File propFile) {
         return new PropertyLookup(fetchProperties(propFile));
+    }
+    /**
+     * @return Factory method to create a property lookup object
+     *
+     * @param propFile File where proeprty data is contained
+     */
+    public static PropertyLookup createDeferred(final File propFile) {
+        return new PropertyLookup(propFile, true);
     }
 
     /**
@@ -97,9 +143,29 @@ public class PropertyLookup implements IPropertyLookup {
      *
      * @param propfile       File containing property data
      * @param defaultsLookup IPropertyLookup of default properties
+     *                       @return lookup
      */
     public static PropertyLookup create(final File propfile, final IPropertyLookup defaultsLookup) {
         return new PropertyLookup(fetchProperties(propfile), defaultsLookup);
+    }
+    /**
+     *
+     * @param data       Properties data
+     * @param defaultsLookup IPropertyLookup of default properties
+     *                       @return lookup
+     */
+    public static PropertyLookup create(final Properties data, final IPropertyLookup defaultsLookup) {
+        return new PropertyLookup(data, defaultsLookup);
+    }
+
+    /**
+     *
+     * @param data       Properties data
+     * @param defaultsLookup IPropertyLookup of default properties
+     *                       @return lookup
+     */
+    public static PropertyLookup create(final IPropertyLookup data, final IPropertyLookup defaultsLookup) {
+        return new PropertyLookup(data, defaultsLookup);
     }
 
     /**
@@ -108,6 +174,7 @@ public class PropertyLookup implements IPropertyLookup {
      * @param propfile       File containing property data
      * @param defaults       Map of default properties
      * @param defaultsLookup IPropertyLookup of default properties
+     *                       @return lookup
      */
     public static PropertyLookup create(final File propfile, final Map defaults, final IPropertyLookup defaultsLookup) {
         return new PropertyLookup(propfile, defaults, defaultsLookup);
@@ -128,6 +195,25 @@ public class PropertyLookup implements IPropertyLookup {
         }
     }
 
+    public PropertyRetriever safe() {
+        return safePropertyRetriever(this);
+    }
+    /**
+     * @return Create a PropertyRetriever from a PropertyLookup that will not throw exception
+     * @param lookup lookup
+     */
+    public static PropertyRetriever safePropertyRetriever(final IPropertyLookup lookup){
+        return new PropertyRetriever() {
+            public String getProperty(String name) {
+                if(lookup.hasProperty(name)) {
+                    return lookup.getProperty(name);
+                }else {
+                    return null;
+                }
+            }
+        };
+    }
+
     /**
      * Check if property exists in file
      *
@@ -135,7 +221,22 @@ public class PropertyLookup implements IPropertyLookup {
      * @return true if it exists; false otherwise
      */
     public boolean hasProperty(final String key) {
+        if(deferred){
+            loadProperties();
+        }
         return properties.containsKey(key);
+    }
+
+    private synchronized void loadProperties() {
+        if (deferred && propsFile.exists()) {
+            try {
+                properties.putAll(fetchProperties(propsFile));
+                expand();
+                deferred = false;
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
     }
 
 
@@ -177,14 +278,16 @@ public class PropertyLookup implements IPropertyLookup {
 
     /**
      * Calls {@link PropertyUtil#expand(Map)} to expand all properties.
+     * @return expanded lookup
      */
-    public void expand() {
+    public PropertyLookup expand() {
         try {
             final Properties expanded = PropertyUtil.expand(properties);
             properties.putAll(expanded);
         } catch (Exception e) {
             throw new PropertyLookupException("failed expanding properties", e);
         }
+        return this;
     }
 
     /**

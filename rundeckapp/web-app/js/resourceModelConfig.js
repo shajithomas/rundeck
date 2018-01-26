@@ -15,7 +15,8 @@
  */
 
 var ResourceModelConfigControl = Class.create({
-    configCount: 0,
+    configCount: 0,  /* This element is used by passwordFieldsService to track when resources are deleted.  Do not reuse
+     the configCount values after delete.  i.e. if you delete #2 and add a new resource, ensure that it is #3. */
     prefixKey: 'x',
     initialize: function(pfix) {
         if(pfix){
@@ -26,10 +27,19 @@ var ResourceModelConfigControl = Class.create({
 
     var parentNode = $(elem).parentNode;
     var top = new Element("div");
+    var top1 = new Element("div");
     var wrapper = new Element("div");
-    top.appendChild(wrapper);
+    top.appendChild(top1);
+    top1.appendChild(wrapper);
+    top1.addClassName('panel panel-default');
+    wrapper.addClassName('panel-body');
     $(parentNode).insert(top, {after:elem});
     var content = parentNode.removeChild(elem);
+    if(content.down('.rsrcConfigContent')){
+        content= content.down('.rsrcConfigContent');
+    }else{
+        content.addClassName('rsrcConfigContent');
+    }
     $(content).select('input').each(function(elem) {
         if (elem.type == 'text') {
             elem.observe('keypress', noenter);
@@ -42,11 +52,13 @@ var ResourceModelConfigControl = Class.create({
     hidden3.setAttribute("value", index);
     hidden3.addClassName("configindex");
 
+    var buttons1 = new Element("div");
+    buttons1.addClassName('panel-footer ');
     var buttons = new Element("div");
-    buttons.setStyle({"text-align":"right"});
+    buttons.addClassName('buttons');
+    buttons1.appendChild(buttons);
 
     if (edit) {
-        wrapper.addClassName("rounded");
         var self=this;
         var button;
         var isinvalid = $(elem).down(".invalidProvider");
@@ -56,7 +68,8 @@ var ResourceModelConfigControl = Class.create({
                 Event.stop(e);
                 self.editConfig(top, type, prefix, index);
             });
-            button.innerHTML = "Edit";
+            setText(button,"Edit");
+            button.addClassName('btn-info');
         }
 
         var cancelbutton = new Element("button");
@@ -64,7 +77,8 @@ var ResourceModelConfigControl = Class.create({
             Event.stop(e);
             self.cancelConfig(top);
         });
-        cancelbutton.innerHTML = "Delete";
+        setText(cancelbutton,"Delete");
+        cancelbutton.addClassName('btn-danger');
 
         buttons.appendChild(cancelbutton);
         if(button){
@@ -72,21 +86,21 @@ var ResourceModelConfigControl = Class.create({
         }
     } else {
         var self = this;
-        wrapper.addClassName("popout");
         var button = new Element("button");
         Event.observe(button, 'click', function(e) {
             Event.stop(e);
             self.checkConfig(top, type, prefix, index);
         });
-        button.innerHTML = "Save";
+        setText(button,"Save");
         button.addClassName("needsSave");
+        button.addClassName('btn-primary');
 
         var cancelbutton = new Element("button");
         Event.observe(cancelbutton, 'click', function(e) {
             Event.stop(e);
             self.cancelConfig(top, type, prefix, index);
         });
-        cancelbutton.innerHTML = "Cancel";
+        setText(cancelbutton,"Cancel");
 
         buttons.appendChild(cancelbutton);
         buttons.appendChild(button);
@@ -95,14 +109,15 @@ var ResourceModelConfigControl = Class.create({
     content.insert(hidden3);
 
     wrapper.appendChild(content);
-
-    wrapper.appendChild(buttons);
-
+    $(buttons).descendants('button').each(function(b){
+        $(b).addClassName('btn btn-default btn-sm');
+    });
+    top1.appendChild(buttons1);
 },
 error: function(req) {
     var data = req.responseJSON;
     if($('errors')){
-        $('errors').innerHTML=req;
+        setText($('errors'),req);
         $('errors').show();
     }
 },
@@ -199,9 +214,13 @@ addConfig: function(type) {
 },
 checkForm: function () {
     if ($('configs').down('button.needsSave')) {
+        var p=[];
         $('configs').select('button.needsSave').each(function(e) {
-            new Effect.Highlight($(e).up('div.popout'));
+            jQuery($(e).up('div.panel')).highlight(2000);
+            p.push($(e).up('div.panel'));
         });
+        var panel=p[0];
+        jQuery(panel).scrollTo(500);
         return false;
     }
     return true;
@@ -228,6 +247,7 @@ pageInit:function () {
         self.hidePicker();
     });
     //load widgets for any in-page configs
+    // widgets must be indexed from 1.  PasswordFieldsService depends on this ordering.
     var n = 0;
     $('configs').select('li div.inpageconfig').each(function(e) {
         n++;

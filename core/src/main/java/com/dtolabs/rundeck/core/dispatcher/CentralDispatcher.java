@@ -24,10 +24,10 @@
 package com.dtolabs.rundeck.core.dispatcher;
 
 
+import com.dtolabs.rundeck.core.common.INodeSet;
+
 import java.io.OutputStream;
-import java.util.Collection;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 
 
 /**
@@ -64,6 +64,15 @@ public interface CentralDispatcher {
     public QueuedItemResult queueDispatcherJob(IDispatchedJob job) throws CentralDispatcherException;
 
     /**
+     *
+     * @return list of project names
+     * @throws CentralDispatcherException
+     */
+    List<String> listProjectNames() throws CentralDispatcherException;
+
+    INodeSet filterProjectNodes(String project, String filter) throws CentralDispatcherException;
+
+    /**
      * List the items on the dispatcher queue
      *
      * @return Collection of Strings listing the active dispatcher queue items
@@ -76,11 +85,24 @@ public interface CentralDispatcher {
     /**
      * List the items on the dispatcher queue
      *
+     * @param project project
      * @return Collection of Strings listing the active dispatcher queue items
      *
      * @throws CentralDispatcherException if an error occurs
      */
     public Collection<QueuedItem> listDispatcherQueue(String project) throws CentralDispatcherException;
+
+    /**
+     * List the items on the dispatcher queue for a project, with paging
+     *
+     * @param project Project name
+     * @param paging paging params
+     *
+     * @return Paged Collection of Strings listing the active dispatcher queue items
+     *
+     * @throws CentralDispatcherException if an error occurs
+     */
+    PagedResult<QueuedItem> listDispatcherQueue(String project, Paging paging) throws CentralDispatcherException;
 
     /**
      * Attempt to kill the execution of an item currently on the dispatcher queue
@@ -99,6 +121,8 @@ public interface CentralDispatcher {
      *
      *
      * @param id the ID string of the item
+     * @param request request
+     * @param receiver receiver
      *
      * @return result, success if the item was running and was successfully killed, false if the item could not be
      *         killed or the item was not running
@@ -113,6 +137,7 @@ public interface CentralDispatcher {
      *
      * @param query  jobs query
      * @param output optional outputstream to store the XML content
+     * @param format format
      *
      * @return collection of IStoredJob objects matching the query.
      *
@@ -136,6 +161,7 @@ public interface CentralDispatcher {
      *
      * @param request load request parameters
      * @param input   XML file
+     * @param format format
      *
      * @return collection of IStoredJobLoadResult objects, indicating the status of each job in the input file.
      *
@@ -152,12 +178,12 @@ public interface CentralDispatcher {
      * @param status result status, either 'succeed','cancel','fail'
      * @param failedNodeCount count of failed nodes
      * @param successNodeCount count of successful nodes
-     * @param tags
+     * @param tags tags
      * @param script script content (can be null if summary specified)
      * @param summary summary of execution (can be null if script specified)
      * @param start start date (can be null)
      * @param end end date (can be null)
-     * @throws com.dtolabs.rundeck.core.dispatcher.CentralDispatcherException
+     * @throws com.dtolabs.rundeck.core.dispatcher.CentralDispatcherException on error
      */
     void reportExecutionStatus(String project, String title, String status, int failedNodeCount, int successNodeCount,
                                    String tags, String script, String summary, Date start, Date end) throws
@@ -169,6 +195,20 @@ public interface CentralDispatcher {
      * @param execId ID of the execution
      *
      * @return Execution detail
+     * @throws com.dtolabs.rundeck.core.dispatcher.CentralDispatcherException on error
      */
     ExecutionDetail getExecution(String execId) throws CentralDispatcherException;
+
+    /**
+     * Create a project
+     * @param project project name
+     * @param projectProperties properties
+     * @throws CentralDispatcherException on error
+     */
+    void createProject(String project, Properties projectProperties) throws CentralDispatcherException;
+    /**
+     * List the project names
+     * @throws CentralDispatcherException on error
+     */
+//    Set<String> listProjects() throws CentralDispatcherException;
 }

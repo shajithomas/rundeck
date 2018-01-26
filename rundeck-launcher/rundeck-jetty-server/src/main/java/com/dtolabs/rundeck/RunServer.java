@@ -16,13 +16,15 @@
 
 package com.dtolabs.rundeck;
 
-import org.mortbay.jetty.Server;
-import org.mortbay.jetty.bio.SocketConnector;
-import org.mortbay.jetty.plus.jaas.JAASUserRealm;
-import org.mortbay.jetty.security.HashUserRealm;
-import org.mortbay.jetty.security.SslSocketConnector;
-import org.mortbay.jetty.webapp.WebAppContext;
-
+import org.eclipse.jetty.plus.jaas.JAASLoginService;
+import org.eclipse.jetty.security.HashLoginService;
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.handler.ContextHandlerCollection;
+import org.eclipse.jetty.server.nio.SelectChannelConnector;
+import org.eclipse.jetty.server.ssl.SslSelectChannelConnector;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
+import org.eclipse.jetty.webapp.WebAppContext;
+import org.eclipse.jetty.server.Handler;
 import java.io.*;
 import java.util.Properties;
 
@@ -32,6 +34,18 @@ import java.util.Properties;
 public class RunServer {
 
     public static final String SERVER_HTTP_HOST = "server.http.host";
+    public static final String RUNDECK_JETTY_CONNECTOR_FORWARDED = "rundeck.jetty.connector.forwarded";
+    public static final String RUNDECK_JETTY_SSL_CONNECTOR_EXCLUDED_PROTOCOLS= "rundeck.jetty.connector.ssl.excludedProtocols";
+    public static final String RUNDECK_JETTY_SSL_CONNECTOR_INCLUDED_PROTOCOLS= "rundeck.jetty.connector.ssl.includedProtocols";
+    public static final String RUNDECK_JETTY_SSL_CONNECTOR_EXCLUDED_CIPHER_SUITES= "rundeck.jetty.connector.ssl.excludedCipherSuites";
+    public static final String RUNDECK_JETTY_SSL_CONNECTOR_INCLUDED_CIPHER_SUITES= "rundeck.jetty.connector.ssl.includedCipherSuites";
+
+    public static final String DEFAULT_SSL_CONNECTER_EXCLUDED_PROTOCOLS = "SSLv3";
+    public static final String DEFAULT_SSL_CONNECTER_INCLUDED_PROTOCOLS = null;
+    public static final String DEFAULT_SSL_CONNECTER_EXCLUDED_CIPHER_SUITES = null;
+    public static final String DEFAULT_SSL_CONNECTER_INCLUDED_CIPHER_SUITES = null;
+
+
     int port = Integer.getInteger("server.http.port", 4440);
     int httpsPort = Integer.getInteger("server.https.port", 4443);
     File basedir;
@@ -41,6 +55,7 @@ public class RunServer {
     private static final String SYS_PROP_ROLE_CLASS_NAMES = "loginmodule.role.classnames";
     public static final String SYS_PROP_WEB_CONTEXT = "server.web.context";
     File configdir;
+    File workdir;
     String loginmodulename;
     String roleclassnames;
     private boolean useJaas;
@@ -59,6 +74,7 @@ public class RunServer {
     private String appContext;
     private static final String RUNDECK_SERVER_SERVER_DIR = "rundeck.server.serverDir";
     private static final String RUNDECK_SERVER_CONFIG_DIR = "rundeck.server.configDir";
+    private static final String RUNDECK_SERVER_WORK_DIR = "rundeck.server.workDir";
 
     public static void main(final String[] args) throws Exception {
         new RunServer().run(args);
@@ -94,7 +110,10 @@ public class RunServer {
 
         server.setStopAtShutdown(true);
         final WebAppContext context = createWebAppContext(new File(serverdir, "exp/webapp"));
-        server.addHandler(context);
+
+        server.setHandler(context);
+        //context.getSessionHandler().getSessionManager().setHttpOnly(true);//TODO: upgrade jetty to support HttpOnly session cookies
+
         configureRealms(server);
         try {
             
@@ -127,22 +146,52 @@ public class RunServer {
     }
 
     private void configureHTTPConnector(final Server server) {
-        final SocketConnector connector = new SocketConnector();
+        final SelectChannelConnector connector = new SelectChannelConnector();
         connector.setPort(port);
         connector.setHost(System.getProperty(SERVER_HTTP_HOST, null));
+        connector.setForwarded(Boolean.getBoolean(RUNDECK_JETTY_CONNECTOR_FORWARDED));
         server.addConnector(connector);
     }
 
     private void configureSSLConnector(final Server server) {
         //configure ssl
-        final SslSocketConnector connector = new SslSocketConnector();
+        final SslSelectChannelConnector connector = new SslSelectChannelConnector();
         connector.setPort(httpsPort);
         connector.setMaxIdleTime(30000);
-        connector.setKeystore(keystore);
-        connector.setPassword(keystorePassword);
-        connector.setKeyPassword(keyPassword);
-        connector.setTruststore(truststore);
-        connector.setTrustPassword(truststorePassword);
+        connector.setForwarded(Boolean.getBoolean(RUNDECK_JETTY_CONNECTOR_FORWARDED));
+        SslContextFactory cf = connector.getSslContextFactory();
+        cf.setKeyStorePath(keystore);
+        cf.setKeyStorePassword(keystorePassword);
+        cf.setKeyManagerPassword(keyPassword);
+        cf.setTrustStore(truststore);
+        cf.setTrustStorePassword(truststorePassword);
+        cf.setExcludeProtocols(
+                System.getProperty(
+                        RUNDECK_JETTY_SSL_CONNECTOR_EXCLUDED_PROTOCOLS,
+                        DEFAULT_SSL_CONNECTER_EXCLUDED_PROTOCOLS
+                ).split(",")
+        );
+        String includedProtocols = System.getProperty(
+                RUNDECK_JETTY_SSL_CONNECTOR_INCLUDED_PROTOCOLS,
+                DEFAULT_SSL_CONNECTER_INCLUDED_PROTOCOLS
+        );
+        if(null!=includedProtocols) {
+            cf.setIncludeProtocols(includedProtocols.split(","));
+        }
+        String excludeCipherSuites = System.getProperty(
+                RUNDECK_JETTY_SSL_CONNECTOR_EXCLUDED_CIPHER_SUITES,
+                DEFAULT_SSL_CONNECTER_EXCLUDED_CIPHER_SUITES
+        );
+        if(excludeCipherSuites!=null) {
+            cf.setExcludeCipherSuites(excludeCipherSuites.split(","));
+        }
+        String includeCipherSuites = System.getProperty(
+                RUNDECK_JETTY_SSL_CONNECTOR_INCLUDED_CIPHER_SUITES,
+                DEFAULT_SSL_CONNECTER_INCLUDED_CIPHER_SUITES
+        );
+        if(includeCipherSuites!=null) {
+            cf.setIncludeCipherSuites(includeCipherSuites.split(","));
+        }
         connector.setHost(System.getProperty(SERVER_HTTP_HOST, null));
         server.addConnector(connector);
     }
@@ -171,11 +220,11 @@ public class RunServer {
      * @throws IOException
      */
     private void configureHashRealms(final Server server) throws IOException {
-        final HashUserRealm realm = new HashUserRealm();
+        HashLoginService realm = new HashLoginService();
         realm.setName(REALM_NAME);
         final File conffile = new File(configdir, "realm.properties");
         realm.setConfig(conffile.getAbsolutePath());
-        server.addUserRealm(realm);
+        server.addBean(realm);
     }
 
     /**
@@ -184,8 +233,7 @@ public class RunServer {
      * @param server
      */
     private void configureJAASRealms(final Server server) {
-        final JAASUserRealm realm = new JAASUserRealm();
-        realm.setCallbackHandlerClass("org.mortbay.jetty.plus.jaas.callback.DefaultCallbackHandler");
+        final JAASLoginService realm = new JAASLoginService();
         realm.setName(REALM_NAME);
         realm.setLoginModuleName(loginmodulename);
 
@@ -194,7 +242,7 @@ public class RunServer {
             realm.setRoleClassNames(strings);
         }
 
-        server.addUserRealm(realm);
+        server.addBean(realm);
     }
 
     /**
@@ -211,7 +259,8 @@ public class RunServer {
             throw new RuntimeException("expected expanded webapp at location: " + webapp.getAbsolutePath());
         }
         final WebAppContext context = new WebAppContext(webapp.getAbsolutePath(), appContext);
-        context.setTempDirectory(new File(serverdir, "work"));
+        context.setTempDirectory(workdir);
+        context.setInitParameter("org.eclipse.jetty.servlet.Default.dirAllowed", "false");
         return context;
     }
 
@@ -230,6 +279,11 @@ public class RunServer {
             configdir = new File(System.getProperty(RUNDECK_SERVER_CONFIG_DIR));
         } else {
             configdir = new File(serverdir, "config");
+        }
+        if (null != System.getProperty(RUNDECK_SERVER_WORK_DIR)) {
+            workdir = new File(System.getProperty(RUNDECK_SERVER_WORK_DIR));
+        } else {
+            workdir = new File(serverdir, "work");
         }
         if(null!=System.getProperty(RUNDECK_SSL_CONFIG)){
             final Properties sslProperties = new Properties();

@@ -1,21 +1,24 @@
-ext.pluginClassNames='com.dtolabs.rundeck.plugin.stub.StubFileCopier,com.dtolabs.rundeck.plugin.stub.StubNodeExecutor'
+/**
+ * The Rundeck stub plugin build file
+ */
+
+ext.pluginClassNames = 'com.dtolabs.rundeck.plugin.stub.StubFileCopier,com.dtolabs.rundeck.plugin.stub.StubNodeExecutor,com.dtolabs.rundeck.plugin.stub.StubResourceModelSourceFactory'
+ext.pluginName = 'Stub Execution'
+ext.pluginDescription = 'Mock execution of commands and scripts'
+
 jar {
     manifest {
-        attributes 'Rundeck-Plugin-Classnames':pluginClassNames
+        attributes 'Rundeck-Plugin-Classnames': pluginClassNames
+        attributes 'Rundeck-Plugin-Name': pluginName
+        attributes 'Rundeck-Plugin-Description': pluginDescription
     }
 }
 
-task wrapper(type: Wrapper) {
-    gradleVersion = '1.0'
-}
-
-
-apply plugin: 'maven'
 task createPom << {
     pom {
         project {
             artifactId 'rundeck-stub-plugin'
-            groupId "com.dtolabs.rundeck"
+            groupId project.group
             inceptionYear '2011'
             packaging 'jar'
             version version
@@ -29,7 +32,7 @@ task createPom << {
                 }
             }
             parent{
-                groupId 'com.dtolabs.rundeck'
+                groupId project.group
                 artifactId "rundeck-bundled-plugins"
                 version(version)
             }
@@ -43,6 +46,9 @@ task createPom << {
                             archive{
                               manifestEntries{
                                 'Rundeck-Plugin-Classnames'(pluginClassNames)
+                                  'Rundeck-Plugin-Version'(rundeckPluginVersion)
+                                  'Rundeck-Plugin-Archive'('true')
+                                  'Rundeck-Plugin-File-Version'(version)
                               }
                             }
                         }

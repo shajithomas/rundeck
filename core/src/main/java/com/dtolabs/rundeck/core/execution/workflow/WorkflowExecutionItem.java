@@ -23,18 +23,16 @@
 */
 package com.dtolabs.rundeck.core.execution.workflow;
 
-import com.dtolabs.rundeck.core.execution.ExecutionItem;
-import com.dtolabs.rundeck.core.utils.NodeSet;
+import com.dtolabs.rundeck.core.execution.StepExecutionItem;
 
-import java.util.Map;
 
 /**
- * WorkflowExecutionItem is ...
+ * WorkflowExecutionItem is an execution item representing an entire workflow.
  *
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  * @version $Revision$
  */
-public interface WorkflowExecutionItem extends ExecutionItem {
+public interface WorkflowExecutionItem extends StepExecutionItem {
     /**
      * Node first strategy name
      */
@@ -44,6 +42,10 @@ public interface WorkflowExecutionItem extends ExecutionItem {
      */
     public static final String STEP_FIRST = "step-first";
     /**
+     * Parallel strategy name
+     */
+    public static final String PARALLEL = "parallel";
+    /**
      * Provider name for node first provider implementation
      */
     public static final String COMMAND_TYPE_NODE_FIRST = "rundeck-workflow-" + NODE_FIRST;
@@ -51,6 +53,10 @@ public interface WorkflowExecutionItem extends ExecutionItem {
      * Provider name for step first provider implementation
      */
     public static final String COMMAND_TYPE_STEP_FIRST = "rundeck-workflow-" + STEP_FIRST;
+    /**
+     * Provider name for parallel provider implementation
+     */
+    public static final String COMMAND_TYPE_PARALLEL = "rundeck-workflow-" + PARALLEL;
     /**
      * Return the workflow definition
      * @return workflow

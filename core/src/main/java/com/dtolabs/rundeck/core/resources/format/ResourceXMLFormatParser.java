@@ -32,6 +32,7 @@ import com.dtolabs.rundeck.core.plugins.configuration.AbstractBaseDescription;
 import com.dtolabs.rundeck.core.plugins.configuration.Describable;
 import com.dtolabs.rundeck.core.plugins.configuration.Description;
 import com.dtolabs.rundeck.core.plugins.configuration.Property;
+import com.dtolabs.rundeck.plugins.util.DescriptionBuilder;
 
 import java.io.File;
 import java.io.InputStream;
@@ -47,8 +48,8 @@ public class ResourceXMLFormatParser implements ResourceFormatParser, Describabl
 
     public static final String SERVICE_PROVIDER_TYPE = "resourcexml";
 
-    public static final Set<String> EXTENSIONS = Collections.unmodifiableSet(new HashSet<String>(Arrays.asList("xml")));
-    public static final Set<String> MIME_TYPES = Collections.unmodifiableSet(new HashSet<String>(Arrays.asList(
+    public static final Set<String> EXTENSIONS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList("xml")));
+    public static final Set<String> MIME_TYPES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
         "*/xml")));
 
     public Set<String> getFileExtensions() {
@@ -79,20 +80,11 @@ public class ResourceXMLFormatParser implements ResourceFormatParser, Describabl
         return nodeReceiver;
     }
 
-    private static final Description DESCRIPTION = new AbstractBaseDescription() {
-        public String getName() {
-            return SERVICE_PROVIDER_TYPE;
-        }
-
-        public String getTitle() {
-            return "Resource XML";
-        }
-
-        public String getDescription() {
-            return "The RunDeck Resource XML format 1.3";
-        }
-
-    };
+    private static final Description DESCRIPTION = DescriptionBuilder.builder()
+        .name(SERVICE_PROVIDER_TYPE)
+        .title("Resource XML")
+        .description("The Rundeck Resource XML format 1.3 (bundled)")
+        .build();
 
     public Description getDescription() {
         return DESCRIPTION;

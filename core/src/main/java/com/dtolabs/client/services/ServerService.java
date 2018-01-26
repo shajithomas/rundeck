@@ -48,21 +48,23 @@ public class ServerService {
     /**
      * Create ServerService using the Framework to provdie connection parameters
      *
-     * @param framework Framework to provide connection parameters
+     * @param url connection url
+     * @param username connection username
+     * @param password connection password
      */
-    public ServerService(final Framework framework) {
+    public ServerService(final String url, final String username, final String password) {
         this(new WebConnectionParameters() {
 
             public String getPassword() {
-                return framework.getProperty("framework.server.password");
+                return password;
             }
 
             public String getUsername() {
-                return framework.getProperty("framework.server.username");
+                return username;
             }
 
             public String getServerUrl() {
-                return framework.getProperty("framework.rundeck.url");
+                return url;
             }
         });
 
@@ -85,6 +87,7 @@ public class ServerService {
      * @param uploadFile  a file to upload with the request.
      * @param method      HTTP connection method, e.g. "get","post","put","delete".
      *
+     * @param uploadFileParam name of the uploaded file param
      * @return parsed XML document, or null
      *
      * @throws com.dtolabs.rundeck.core.CoreException
@@ -92,17 +95,16 @@ public class ServerService {
      * @throws java.net.MalformedURLException if connection URL or urlPath params are malformed.
      */
     public WebserviceResponse makeRundeckRequest(final String urlPath, final Map queryParams, final File uploadFile,
-                                                   final String method)
+                                                 final String method, final String uploadFileParam)
         throws CoreException, MalformedURLException {
-        return makeRundeckRequest(urlPath, queryParams, uploadFile, method, null);
+        return makeRundeckRequest(urlPath, queryParams, uploadFile, method, null, uploadFileParam);
     }
     /**
      * Make the request to the ItNav workbench.
      *
      * @param urlPath     the path for the request
      * @param queryParams any query parameters
-     * @param uploadFile  a file to upload with the request.
-     * @param method      HTTP connection method, e.g. "get","post","put","delete".
+     * @param formData form data
      *
      * @return parsed XML document, or null
      *
@@ -110,17 +112,21 @@ public class ServerService {
      *                                        if an error occurs
      * @throws java.net.MalformedURLException if connection URL or urlPath params are malformed.
      */
-    public WebserviceResponse makeRundeckRequest(final String urlPath, final Map queryParams, final Map<String,? extends Object> formData)
+    public WebserviceResponse makeRundeckRequest(final String urlPath,
+                                                 final Map queryParams,
+                                                 final Map<String, ? extends Object> formData)
         throws CoreException, MalformedURLException {
-        return makeRundeckRequest(urlPath, queryParams, null, null, null, formData);
+        return makeRundeckRequest(urlPath, queryParams, null, null, null, formData, null);
     }
     /**
      * Make the request to the ItNav workbench.
      *
+     * @param uploadFileParam name of the uploaded file param
      * @param urlPath     the path for the request
      * @param queryParams any query parameters
      * @param uploadFile  a file to upload with the request.
      * @param method      HTTP connection method, e.g. "get","post","put","delete".
+     * @param expectedContentType content type
      *
      * @return parsed XML document, or null
      *
@@ -128,18 +134,25 @@ public class ServerService {
      *                                        if an error occurs
      * @throws java.net.MalformedURLException if connection URL or urlPath params are malformed.
      */
-    public WebserviceResponse makeRundeckRequest(final String urlPath, final Map queryParams, final File uploadFile,
-                                                   final String method, final String expectedContentType)
+    public WebserviceResponse makeRundeckRequest(final String urlPath,
+                                                 final Map queryParams,
+                                                 final File uploadFile,
+                                                 final String method,
+                                                 final String expectedContentType,
+                                                 final String uploadFileParam)
         throws CoreException, MalformedURLException {
-        return makeRundeckRequest(urlPath, queryParams, uploadFile, method, expectedContentType, null);
+        return makeRundeckRequest(urlPath, queryParams, uploadFile, method, expectedContentType, null, uploadFileParam);
     }
     /**
      * Make the request to the ItNav workbench.
      *
+     * @param uploadFileParam name of the uploaded file param
      * @param urlPath     the path for the request
      * @param queryParams any query parameters
      * @param uploadFile  a file to upload with the request.
      * @param method      HTTP connection method, e.g. "get","post","put","delete".
+     * @param expectedContentType expected content type
+     * @param formData data
      *
      * @return parsed XML document, or null
      *
@@ -147,8 +160,13 @@ public class ServerService {
      *                                        if an error occurs
      * @throws java.net.MalformedURLException if connection URL or urlPath params are malformed.
      */
-    public WebserviceResponse makeRundeckRequest(final String urlPath, final Map queryParams, final File uploadFile,
-                                                   final String method, final String expectedContentType, final Map<String,? extends Object> formData)
+    public WebserviceResponse makeRundeckRequest(final String urlPath,
+                                                 final Map queryParams,
+                                                 final File uploadFile,
+                                                 final String method,
+                                                 final String expectedContentType,
+                                                 final Map<String, ? extends Object> formData,
+                                                 final String uploadFileParam)
         throws CoreException, MalformedURLException {
         if (null == connParams) {
             throw new IllegalArgumentException("WebConnectionParameters must be specified");
@@ -157,7 +175,7 @@ public class ServerService {
         final URL jcUrl = new URL(connParams.getServerUrl());
         final String jcBasePath = jcUrl.getPath();
         final WebserviceHttpClient hc ;
-        if(null==formData){
+        if(null==formData || formData.size()<1){
             hc= WebserviceHttpClientFactory.getInstance().getWebserviceHttpClient(jcUrl
                                                                                                        + urlPath,
             jcBasePath,
@@ -165,7 +183,7 @@ public class ServerService {
             connParams.getPassword(),
             queryParams,
             uploadFile,
-            "xmlBatch",null,expectedContentType);
+            uploadFileParam,null,expectedContentType);
         }else{
             hc = WebserviceHttpClientFactory.getInstance().getWebserviceHttpClient(jcUrl
                                                                                    + urlPath,
@@ -175,6 +193,7 @@ public class ServerService {
                 queryParams,
                 formData);
         }
+        hc.setRequestHeader("X-Rundeck-API-XML-Response-Wrapper","true");
         if (null != method) {
             hc.setMethodType(method);
         }

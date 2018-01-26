@@ -17,8 +17,8 @@
 package com.dtolabs.rundeck.core.cli.project;
 
 import com.dtolabs.rundeck.core.cli.CLIToolLogger;
-import com.dtolabs.rundeck.core.common.Framework;
-import com.dtolabs.rundeck.core.common.FrameworkProject;
+import com.dtolabs.rundeck.core.dispatcher.CentralDispatcher;
+import com.dtolabs.rundeck.core.utils.IPropertyLookup;
 import org.apache.commons.cli.CommandLine;
 import org.apache.log4j.Category;
 
@@ -34,39 +34,39 @@ public class RemoveAction extends BaseAction {
     /**
      * Create a new RemoveAction and parse the arguments from a {@link org.apache.commons.cli.CommandLine}
      *
-     * @param main
-     * @param framework
-     * @param cli
+     * @param main logger
+     * @param framework framework
+     * @param cli cli
      */
-    public RemoveAction(final CLIToolLogger main, final Framework framework, final CommandLine cli) {
-        this(main, framework, BaseAction.parseBaseActionArgs(cli));
+    public RemoveAction(final CLIToolLogger main, final IPropertyLookup framework, final CommandLine cli, final CentralDispatcher dispatcher) {
+        this(main, framework, BaseAction.parseBaseActionArgs(cli), dispatcher);
     }
 
     /**
      * Create a new RemoveAction with argument specifiers
      *
-     * @param main
+     * @param main logger
      * @param framework framework object
      * @param baseArgs  base args
-     * @param args      RemoveAction args
      */
     public RemoveAction(final CLIToolLogger main,
-                        final Framework framework,
-                        final BaseActionArgs baseArgs) {
-        super(main, framework, baseArgs);
+                        final IPropertyLookup framework,
+                        final BaseActionArgs baseArgs,
+                        final CentralDispatcher dispatcher) {
+        super(main, framework, baseArgs,dispatcher);
         initArgs();
     }
 
 
     private void initArgs() {
         unsetupArgs.append("-name ");
-        unsetupArgs.append(project.getFrameworkProject());
+        unsetupArgs.append(project);
     }
 
     /**
      * Execute the action.
      *
-     * @throws Throwable
+     * @throws Throwable unimplemented
      */
     public void exec() throws Throwable {
 //        super.exec();

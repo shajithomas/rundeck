@@ -1,22 +1,24 @@
-ext.pluginClassNames='com.dtolabs.rundeck.plugin.script.ScriptFileCopier,com.dtolabs.rundeck.plugin.script.ScriptNodeExecutor'
+/**
+ * The Rundeck script plugin build file
+ */
+
+ext.pluginClassNames = 'com.dtolabs.rundeck.plugin.script.ScriptFileCopier,com.dtolabs.rundeck.plugin.script.ScriptNodeExecutor'
+ext.pluginName = 'Script Execution'
+ext.pluginDescription = 'Delegate command and script execution to another external script'
+
 jar {
     manifest {
         attributes 'Rundeck-Plugin-Classnames': pluginClassNames
+        attributes 'Rundeck-Plugin-Name': pluginName
+        attributes 'Rundeck-Plugin-Description': pluginDescription
     }
 }
 
-task wrapper(type: Wrapper) {
-    gradleVersion = '1.0'
-}
-
-
-
-apply plugin: 'maven'
 task createPom << {
     pom {
         project {
             artifactId 'rundeck-script-plugin'
-            groupId "com.dtolabs.rundeck"
+            groupId project.group
             inceptionYear '2011'
             packaging 'jar'
             version version
@@ -30,7 +32,7 @@ task createPom << {
                 }
             }
             parent{
-                groupId 'com.dtolabs.rundeck'
+                groupId project.group
                 artifactId "rundeck-bundled-plugins"
                 version(version)
             }
@@ -44,6 +46,9 @@ task createPom << {
                             archive{
                               manifestEntries{
                                 'Rundeck-Plugin-Classnames'(pluginClassNames)
+                                  'Rundeck-Plugin-Version'(rundeckPluginVersion)
+                                  'Rundeck-Plugin-Archive'('true')
+                                  'Rundeck-Plugin-File-Version'(version)
                               }
                             }
                         }

@@ -18,10 +18,6 @@ package com.dtolabs.launcher;
 
 import com.dtolabs.rundeck.core.Constants;
 import com.dtolabs.rundeck.core.cli.CLIToolLogger;
-import com.dtolabs.rundeck.core.cli.project.BaseAction;
-import com.dtolabs.rundeck.core.cli.project.CreateAction;
-import com.dtolabs.rundeck.core.common.Framework;
-import com.dtolabs.utils.Streams;
 import org.apache.log4j.Logger;
 import org.apache.tools.ant.types.FilterSet;
 import org.apache.tools.ant.types.FilterSetCollection;
@@ -34,14 +30,10 @@ import java.util.Properties;
 
 /**
  * Setup which replaces old command line parsing at the shell layer which leaves the old setup/setup.bat to only
- * blindly pass arguments along with the java.home, rdeck.base, rdeck.home, and ant.home environment
+ * blindly pass arguments along with the java.home, rdeck.base.
  */
 public class Setup implements CLIToolLogger {
     public static final Logger logger = Logger.getLogger(Setup.class);
-    /**
-     * basic bootstrapped rdeck.home
-     */
-    public static String RDECK_HOME = Constants.getSystemHomeDir();
     /**
      * basic bootstrapped rdeck.base
      */
@@ -49,7 +41,7 @@ public class Setup implements CLIToolLogger {
     /**
      * setup usage statement
      */
-    public static final String SETUP_USAGE = "rd-setup [-v] -n nodename [-N hostname] -s serverhostname [ --key=value ]";
+    public static final String SETUP_USAGE = "rd-setup [-v] -n nodename [-N hostname] [ --key=value ]";
 
     /**
       * force a rewrite of the framework configuration files. always true
@@ -67,6 +59,7 @@ public class Setup implements CLIToolLogger {
 
     /**
      * called from setup shell/bat script. Calls the {@link #execute} method.
+     * @param args args
      */
     public static void main(final String args[]) {
         int exitCode = 1;
@@ -87,8 +80,7 @@ public class Setup implements CLIToolLogger {
         "admin.aclpolicy",
         "apitoken.aclpolicy",
         "framework.properties",
-        "log4j.properties",
-        "console-log4j.properties",
+        "cli-log4j.properties",
         "profile.bat",
         "profile",
         "project.properties"
@@ -115,7 +107,6 @@ public class Setup implements CLIToolLogger {
     private void performSetup(String[] args) throws SetupException {
         parameters.validate();
         validateInstall();
-        final File homedir = new File(parameters.getHomeDir());
         final File basedir = new File(parameters.getBaseDir());
         if(!basedir.exists()){
             if(!basedir.mkdirs()) {
@@ -124,10 +115,10 @@ public class Setup implements CLIToolLogger {
         }
 
         generatePreferences(args, parameters.getProperties());
-        newImpl( homedir, basedir);
+        newImpl(basedir);
     }
 
-    private void newImpl( File homedir, File basedir) throws SetupException {
+    private void newImpl(File basedir) throws SetupException {
         // create dirs
         File etcdir = new File(Constants.getFrameworkConfigDir(basedir.getAbsolutePath()));
         if(!etcdir.exists() && !etcdir.mkdir()){
@@ -157,7 +148,7 @@ public class Setup implements CLIToolLogger {
         try {
             for (final String filename : templates) {
                 final File destFile = new File(etcdir, filename);
-                final File templFile = getTemplateFile(homedir, filename+".template");
+                final File templFile = getTemplateFile(filename+".template");
                 if (overwrite  && destFile.isFile()) {
                     //create backup
                     final File backup = new File(etcdir, filename + ".backup-" + time);
@@ -176,8 +167,8 @@ public class Setup implements CLIToolLogger {
                         if (!destFile.setWritable(false, false)) {
                             logger.warn("Failed to remove writable flag for file: " + destFile.getAbsolutePath());
                         }
-
                     }
+
                 }
             }
         } catch (IOException e) {
@@ -195,7 +186,7 @@ public class Setup implements CLIToolLogger {
                 fileInputStream.close();
             }
         } catch (IOException e) {
-            throw new SetupException("unable to load frameworkproperties", e);
+            throw new SetupException("unable to load framework.properties", e);
         }
         for (final String prop : new String[]{
             "framework.var.dir",
@@ -212,46 +203,47 @@ public class Setup implements CLIToolLogger {
                 throw new SetupException("Unable to create dir: " + dir.getAbsolutePath());
             }
         }
-
-        ////////
-        //5. if default project name is set, create default project
-        /*
-            run rd-project -p ${project.default.name} -a create
-         */
-        if ("true".equals(prefs.getProperty("project.default.create"))
-            && null != prefs.getProperty("project.default.name")) {
-            //run ctlproject create task
-            final CreateAction createAction = new CreateAction(
-                this,
-                Framework.getInstance(basedir.getAbsolutePath()),
-                BaseAction.createArgs(prefs.getProperty("project.default.name"), true),
-                CreateAction.createArgs(false));
-            try {
-                createAction.exec();
-            } catch (Throwable throwable) {
-                throw new SetupException("Failed to run project create action: " + throwable.getMessage(), throwable);
-            }
-        }
     }
 
 
     /**
      * Look for template in the jar resources, otherwise look for it on filepath
-     * @param homedir
-     * @param filename
-     * @return
+     * @param filename template name
+     * @return file
+     * @throws java.io.IOException on io error
      */
-    private File getTemplateFile(File homedir, String filename) throws IOException {
+    private File getTemplateFile(String filename) throws IOException {
         File templateFile=null;
         final String resource = TEMPLATE_RESOURCES_PATH + "/" + filename;
         InputStream is = Setup.class.getClassLoader().getResourceAsStream(resource);
-        if(null!=is) {
-                templateFile = File.createTempFile("temp", filename);
-                Streams.copyStream(is, new FileOutputStream(templateFile));
-                return templateFile;
-        }else {
-            throw new RuntimeException("Unable to load required resource: " + resource);
+        if (null == is) {
+            throw new RuntimeException("Unable to load required template: " + resource);
         }
+        templateFile = File.createTempFile("temp", filename);
+        try {
+            return copyToNativeLineEndings(is, templateFile);
+        } finally {
+            is.close();
+        }
+    }
+
+    private File copyToNativeLineEndings(InputStream input, File destFile) throws IOException {
+        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(input));
+        final OutputStream out= new FileOutputStream(destFile);
+        try{
+            final BufferedWriter writer=new BufferedWriter(new OutputStreamWriter(out));
+            String line=bufferedReader.readLine();
+            while (line != null) {
+                writer.write(line);
+                writer.newLine();
+                line = bufferedReader.readLine();
+            }
+            writer.flush();
+        }finally {
+            out.close();
+        }
+        return destFile;
+
     }
 
     /**
@@ -262,7 +254,7 @@ public class Setup implements CLIToolLogger {
         if (null == parameters.getBaseDir() || parameters.getBaseDir().equals("")) {
             throw new SetupException("rdeck.base property not defined or is the empty string");
         }
-        if (!checkIfDir("rdeck.home", parameters.getBaseDir())) {
+        if (!checkIfDir("rdeck.base", parameters.getBaseDir())) {
             throw new SetupException(parameters.getBaseDir() + " is not a valid rdeck install");
         }
     }
@@ -342,12 +334,9 @@ public class Setup implements CLIToolLogger {
 
         private boolean forceFlag = Setup.FORCE_FLAG;
         private boolean debugFlag;
-        private String nodeArg;
-        private String nodeHostnameArg;
         private String serverHostname;
         private String serverName;
         private String baseDir;
-        private String homeDir;
         private Properties properties;
 
         public Parameters() {
@@ -363,7 +352,7 @@ public class Setup implements CLIToolLogger {
         }
 
         protected String getNodeArg() {
-            return nodeArg;
+            return serverName;
         }
 
         /**
@@ -386,7 +375,7 @@ public class Setup implements CLIToolLogger {
 
         /**
          * process the required single hyphen parameters.
-         * support basic opt args:  forceFlag (-f), debugFlag (-v), and nodeArg (-n <node>)
+         * support basic opt args: debugFlag (-v), and name (-n <name>)
          *
          * @param args command line arg vector
          * @throws SetupException thrown if missing required arg
@@ -395,78 +384,40 @@ public class Setup implements CLIToolLogger {
             for (int i = 0; i < args.length; i++) {
                 if (args[i].equals("-v")) {
                     debugFlag = true;
-                } else if (args[i].equals("-f")) {
-                    // ignore it. this is for backwards compatability                
                 } else if (args[i].equals("-n")) {
-                    nodeArg = getOptParam(args, i);
-                    i++;
-                }else if (args[i].equals("-N")) {
-                    nodeHostnameArg = getOptParam(args, i);
-                    i++;
-                }else if (args[i].equals("-s")) {
-                    serverHostname = getOptParam(args, i);
-                    i++;
-                }else if (args[i].equals("-S")) {
                     serverName = getOptParam(args, i);
                     i++;
-                }else if (args[i].equals("-d")) {
-                    baseDir = getOptParam(args, i);
+                } else if (args[i].equals("-N")) {
+                    serverHostname = getOptParam(args, i);
                     i++;
-                }else if (args[i].equals("-H")) {
-                    homeDir = getOptParam(args, i);
+                } else if (args[i].equals("-d")) {
+                    baseDir = getOptParam(args, i);
                     i++;
                 } else if (args[i].startsWith("--")) {
                     continue;
-                } else
+                } else {
                     usageError("unrecognized argument: \"" + args[i] + "\"");
+                }
             }
-
         }
         public void validate() throws SetupException {
-            if (null == nodeArg)
-                throw new SetupException("nodeName option not provided");
-            if (null == nodeHostnameArg) {
-                System.out.println("Using nodename as hostname: " + nodeArg);
-                nodeHostnameArg = nodeArg;
+            if (null == serverName) {
+                throw new SetupException("server name not specified.");
             }
             if (null == serverHostname) {
-                serverHostname = nodeHostnameArg;
-            }
-            if (null == serverName) {
-                serverName = nodeArg;
-            }
-            if (null != serverHostname) {
-                System.out.println("Using server hostname: " + serverHostname);
-            }
-            if (null != serverName) {
-                System.out.println("Using server hostname: " + serverName);
+                serverHostname = serverName;
             }
             if (null == baseDir) {
                 baseDir = Constants.getSystemBaseDir();
             }
-            if (null == homeDir) {
-                homeDir = Constants.getSystemHomeDir();
-            }
-            if (null == homeDir) {
-                homeDir = baseDir;
-            }
 
-            System.out.println("Using basedir: " + Preferences.forwardSlashPath(baseDir));
             properties.setProperty("rdeck.base", Preferences.forwardSlashPath(baseDir));
-            System.out.println("Using homedir: " + Preferences.forwardSlashPath(homeDir));
-            properties.setProperty("rdeck.home", Preferences.forwardSlashPath(homeDir));
-            properties.setProperty("framework.node.name", nodeArg);
-            properties.setProperty("framework.node.hostname", nodeHostnameArg);
-            if (null != serverHostname) {
-                properties.setProperty("framework.server.hostname", serverHostname);
-            }
-            if (null != serverName) {
-                properties.setProperty("framework.server.name", serverName);
-            }
+            properties.setProperty("framework.server.hostname", serverHostname);
+            properties.setProperty("framework.server.name", serverName);
         }
 
         public String getNodeHostnameArg() {
-            return nodeHostnameArg;
+            return serverHostname;
         }
 
         public String getServerHostname() {
@@ -477,13 +428,6 @@ public class Setup implements CLIToolLogger {
             return properties;
         }
 
-        public void setNodeArg(String nodeArg) {
-            this.nodeArg = nodeArg;
-        }
-
-        public void setNodeHostnameArg(String nodeHostnameArg) {
-            this.nodeHostnameArg = nodeHostnameArg;
-        }
 
         public void setServerHostname(String serverHostname) {
             this.serverHostname = serverHostname;
@@ -505,14 +449,6 @@ public class Setup implements CLIToolLogger {
             this.baseDir = baseDir;
         }
 
-        public String getHomeDir() {
-            return homeDir;
-        }
-
-        public void setHomeDir(String homeDir) {
-            this.homeDir = homeDir;
-        }
-        
         public void setProperty(String name, String value) {
             properties.setProperty(name, value);
         }

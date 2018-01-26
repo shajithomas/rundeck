@@ -48,7 +48,7 @@ cat > $DIR/temp.out <<END
 END
 
 # now submit req
-runurl="${APIURL}/jobs/import"
+runurl="${APIURL}/project/$project/jobs/import"
 
 params=""
 
@@ -62,7 +62,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #result will contain list of failed and succeeded jobs, in this
 #case there should only be 1 failed or 1 succeeded since we submit only 1
@@ -96,15 +96,19 @@ fi
 CURL="curl $CURLOPTS"
 
 # get listing
-$CURL -H "$AUTHHEADER" -X DELETE ${runurl}?${params} > $DIR/curl.out
+$CURL -D $DIR/headers.out -H "$AUTHHEADER" -X DELETE ${runurl}?${params} > $DIR/curl.out
 if [ 0 != $? ] ; then
     errorMsg "ERROR: failed query request"
     exit 2
 fi
 
+# allow 204 no content response
+if ! grep 'HTTP/1.1 204' $DIR/headers.out ; then
 #test success result
-sh $DIR/api-test-success.sh $DIR/curl.out "Job was successfully deleted: [${jobid}] api-test/job-delete/cli job" || exit 2
+  $SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out "Job was successfully deleted: [${jobid}] api-test/job-delete/cli job" || exit 2
+fi
 echo "OK"
+rm $DIR/headers.out
 
 ###
 # Get the chosen id, expect DNE message
@@ -115,7 +119,7 @@ echo "TEST: Get deleted job should fail"
 # now submit req
 runurl="${APIURL}/job/${jobid}"
 params=""
-sh $DIR/api-expect-error.sh "${runurl}" "${params}" "Job ID does not exist: ${jobid}" || exit 2
+$SHELL $SRC_DIR/api-expect-error.sh "${runurl}" "${params}" "Job ID does not exist: ${jobid}" 404 || exit 2
 
 echo "OK"
 

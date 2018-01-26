@@ -17,13 +17,13 @@
 package com.dtolabs.rundeck.jetty.jaas;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.text.DecimalFormat;
-import java.util.ArrayList;
-import java.util.Hashtable;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.naming.Context;
 import javax.naming.NamingEnumeration;
@@ -41,16 +41,17 @@ import javax.security.auth.callback.NameCallback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.LoginException;
 
-import org.mortbay.jetty.plus.jaas.callback.ObjectCallback;
-import org.mortbay.jetty.plus.jaas.spi.AbstractLoginModule;
-import org.mortbay.jetty.plus.jaas.spi.UserInfo;
-import org.mortbay.jetty.security.Credential;
-import org.mortbay.log.Log;
+import org.eclipse.jetty.plus.jaas.callback.ObjectCallback;
+import org.eclipse.jetty.plus.jaas.spi.AbstractLoginModule;
+import org.eclipse.jetty.plus.jaas.spi.UserInfo;
+import org.eclipse.jetty.util.log.Log;
+import org.eclipse.jetty.util.log.Logger;
+import org.eclipse.jetty.util.security.Credential;
 
 /**
- * 
+ *
  * A LdapLoginModule for use with JAAS setups
- * 
+ *
  * The jvm should be started with the following parameter: <br>
  * <br>
  * <code>
@@ -59,7 +60,7 @@ import org.mortbay.log.Log;
  * <br>
  * and an example of the ldap-loginModule.conf would be: <br>
  * <br>
- * 
+ *
  * <pre>
  * ldaploginmodule {
  *    com.dtolabs.rundeck.jetty.jaas.JettyCachingLdapLoginModule required
@@ -67,6 +68,8 @@ import org.mortbay.log.Log;
  *    contextFactory="com.sun.jndi.ldap.LdapCtxFactory"
  *    hostname="ldap.example.com"
  *    port="389"
+ *    timeoutRead="5000"
+ *    timeoutConnect="30000"
  *    bindDn="cn=Directory Manager"
  *    bindPassword="directory"
  *    authenticationMethod="simple"
@@ -84,161 +87,189 @@ import org.mortbay.log.Log;
  *    roleObjectClass="groupOfUniqueNames"
  *    rolePrefix="rundeck"
  *    cacheDurationMillis="500"
- *    reportStatistics="true";
+ *    reportStatistics="true"
+ *    nestedGroups="false";
  *    };
  * </pre>
- * 
- * @author Jesse McConnell <jesse@codehaus.org>
- * @author Frederic Nizery <frederic.nizery@alcatel-lucent.fr>
- * @author Trygve Laugstol <trygvis@codehaus.org>
- * @author Noah Campbell <noahcampbell@gmail.com>
+ *
+ * @author Jesse McConnell <a href="mailto:jesse@codehaus.org">jesse@codehaus.org</a>
+ * @author Frederic Nizery <a href="mailto:frederic.nizery@alcatel-lucent.fr">frederic.nizery@alcatel-lucent.fr</a>
+ * @author Trygve Laugstol <a href="mailto:trygvis@codehaus.org">trygvis@codehaus.org</a>
+ * @author Noah Campbell <a href="mailto:noahcampbell@gmail.com">noahcampbell@gmail.com</a>
  */
 public class JettyCachingLdapLoginModule extends AbstractLoginModule {
 
+    private static final Logger LOG = Log.getLogger(JettyCachingLdapLoginModule.class);
+
+    private static final Pattern rolePattern = Pattern.compile("^cn=([^,]+)", Pattern.CASE_INSENSITIVE);
+
+    protected final String _roleMemberFilter = "member=*";
     /**
      * Provider URL
      */
-    private String _providerUrl;
-    
+    protected String _providerUrl;
+
     /**
      * Role prefix to remove from ldap group name.
      */
-    private String _rolePrefix = "";
+    protected String _rolePrefix = "";
 
     /**
      * Duration of storing the user in memory.
      */
-    private int _cacheDuration = 0;
+    protected int _cacheDuration = 0;
 
     /**
      * hostname of the ldap server
      */
-    private String _hostname;
+    protected String _hostname;
 
     /**
      * port of the ldap server
      */
-    private int _port = 389;
+    protected int _port = 389;
 
     /**
      * Context.SECURITY_AUTHENTICATION
      */
-    private String _authenticationMethod;
+    protected String _authenticationMethod;
 
     /**
      * Context.INITIAL_CONTEXT_FACTORY
      */
-    private String _contextFactory;
+    protected String _contextFactory;
 
     /**
      * root DN used to connect to
      */
-    private String _bindDn;
+    protected String _bindDn;
 
     /**
      * password used to connect to the root ldap context
      */
-    private String _bindPassword;
+    protected String _bindPassword;
 
     /**
      * object class of a user
      */
-    private String _userObjectClass = "inetOrgPerson";
+    protected String _userObjectClass = "inetOrgPerson";
 
     /**
      * attribute that the principal is located
      */
-    private String _userRdnAttribute = "uid";
+    protected String _userRdnAttribute = "uid";
 
     /**
      * attribute that the principal is located
      */
-    private String _userIdAttribute = "cn";
+    protected String _userIdAttribute = "cn";
 
     /**
      * name of the attribute that a users password is stored under
-     * <p/>
+     * <br>
      * NOTE: not always accessible, see force binding login
      */
-    private String _userPasswordAttribute = "userPassword";
+    protected String _userPasswordAttribute = "userPassword";
 
     /**
      * base DN where users are to be searched from
      */
-    private String _userBaseDn;
+    protected String _userBaseDn;
 
     /**
      * base DN where role membership is to be searched from
      */
-    private String _roleBaseDn;
+    protected String _roleBaseDn;
 
     /**
      * object class of roles
      */
-    private String _roleObjectClass = "groupOfUniqueNames";
+    protected String _roleObjectClass = "groupOfUniqueNames";
 
     /**
      * name of the attribute that a user DN would be under a role class
      */
-    private String _roleMemberAttribute = "uniqueMember";
+    protected String _roleMemberAttribute = "uniqueMember";
 
     /**
      * name of the attribute that a username would be under a role class
      */
-    private String _roleUsernameMemberAttribute=null;
+    protected String _roleUsernameMemberAttribute=null;
 
     /**
      * the name of the attribute that a role would be stored under
      */
-    private String _roleNameAttribute = "roleName";
+    protected String _roleNameAttribute = "roleName";
 
-    private boolean _debug;
+    protected boolean _debug;
+
+    protected boolean _ldapsVerifyHostname=true;
 
     /**
      * if the getUserInfo can pull a password off of the user then password
      * comparison is an option for authn, to force binding login checks, set
      * this to true
      */
-    private boolean _forceBindingLogin = false;
+    protected boolean _forceBindingLogin = false;
 
     /**
      * if _forceFindingLogin is true, and _forceBindingLoginUseRootContextForRoles
      * is true, then role memberships are obtained using _rootContext
      */
-    private boolean _forceBindingLoginUseRootContextForRoles = false;
+    protected boolean _forceBindingLoginUseRootContextForRoles = false;
 
-    private DirContext _rootContext;
+    protected DirContext _rootContext;
 
-    private boolean _reportStatistics;
+    protected boolean _reportStatistics;
 
-    private static final ConcurrentHashMap<String, CachedUserInfo> USERINFOCACHE = 
+    /**
+     * List of supplemental roles provided in config file that get added to
+     * all users.
+     */
+    protected List<String> _supplementalRoles;
+
+    protected boolean _nestedGroups;
+
+    /**
+     * timeout for LDAP read
+     */
+    protected long _timeoutRead =0;
+
+    /**
+     * timeout for LDAP connection
+     */
+    protected long _timeoutConnect =0;
+
+    protected static final ConcurrentHashMap<String, CachedUserInfo> USERINFOCACHE =
         new ConcurrentHashMap<String, CachedUserInfo>();
-    
+
     /**
      * The number of cache hits for UserInfo objects.
      */
-    private static long userInfoCacheHits;
-    
+    protected static long userInfoCacheHits;
+
     /**
      * The number of login attempts for this particular module.
      */
-    private static long loginAttempts;
+    protected static long loginAttempts;
+    private static ConcurrentHashMap<String, List<String>> roleMemberOfMap;
+    private static long roleMemberOfMapExpires = 0;
 
     /**
      * get the available information about the user
-     * <p/>
+     * <br>
      * for this LoginModule, the credential can be null which will result in a
      * binding ldap authentication scenario
-     * <p/>
+     * <br>
      * roles are also an optional concept if required
-     * 
+     *
      * @param username
      * @return
      * @throws Exception
      */
     @SuppressWarnings("unchecked")
     public UserInfo getUserInfo(String username) throws Exception {
-        
+
         String pwdCredential = getUserCredentials(username);
 
         if (pwdCredential == null) {
@@ -285,7 +316,7 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
      * attempts to get the users credentials from the users context
      * <p/>
      * NOTE: this is not an user authenticated operation
-     * 
+     *
      * @param username
      * @return
      * @throws LoginException
@@ -301,14 +332,13 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
 
         String filter = "(&(objectClass={0})({1}={2}))";
 
-//        Log.debug("Searching for users with filter: \'" + filter + "\'" + " from base dn: " + _userBaseDn);
 
         try {
             Object[] filterArguments = { _userObjectClass, _userIdAttribute, username };
             NamingEnumeration results = _rootContext.search(_userBaseDn, filter, filterArguments,
                     ctls);
 
-            Log.debug("Found user?: " + results.hasMoreElements());
+            LOG.debug("Found user?: " + results.hasMoreElements());
 
             if (!results.hasMoreElements()) {
                 throw new LoginException("User not found.");
@@ -325,30 +355,30 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
 
                     ldapCredential = new String(value);
                 } catch (NamingException e) {
-                    Log.debug("no password available under attribute: " + _userPasswordAttribute);
+                    LOG.debug("no password available under attribute: " + _userPasswordAttribute);
                 }
             }
         } catch (NamingException e) {
             throw new LoginException("Root context binding failure.");
         }
 
-        Log.debug("user cred is: " + ldapCredential);
+        LOG.debug("user cred is: " + ldapCredential);
 
         return ldapCredential;
     }
 
     /**
      * attempts to get the users roles from the root context
-     * <p/>
+     *
      * NOTE: this is not an user authenticated operation
-     * 
+     *
      * @param dirContext
      * @param username
      * @return
      * @throws LoginException
      */
     @SuppressWarnings("unchecked")
-    private List getUserRoles(DirContext dirContext, String username) throws LoginException,
+    protected List getUserRoles(DirContext dirContext, String username) throws LoginException,
             NamingException {
         String userDn = _userRdnAttribute + "=" + username + "," + _userBaseDn;
 
@@ -358,12 +388,12 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
     @SuppressWarnings("unchecked")
     private List getUserRolesByDn(DirContext dirContext, String userDn, String username) throws LoginException,
             NamingException {
-        ArrayList roleList = new ArrayList();
+        List<String> roleList = new ArrayList<String>();
 
         if (dirContext == null || _roleBaseDn == null || (_roleMemberAttribute == null
                                                           && _roleUsernameMemberAttribute == null)
                 || _roleObjectClass == null) {
-            Log.warn("JettyCachingLdapLoginModule: No user roles found: roleBaseDn, roleObjectClass and roleMemberAttribute or roleUsernameMemberAttribute must be specified.");
+            LOG.warn("JettyCachingLdapLoginModule: No user roles found: roleBaseDn, roleObjectClass and roleMemberAttribute or roleUsernameMemberAttribute must be specified.");
             return roleList;
         }
 
@@ -373,6 +403,7 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
 
         String filter = "(&(objectClass={0})({1}={2}))";
         final NamingEnumeration results;
+
         if(null!=_roleUsernameMemberAttribute){
             Object[] filterArguments = { _roleObjectClass, _roleUsernameMemberAttribute, username };
             results = dirContext.search(_roleBaseDn, filter, filterArguments, ctls);
@@ -401,60 +432,237 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
             while (roles.hasMore()) {
                 if (_rolePrefix != null && !"".equalsIgnoreCase(_rolePrefix)) {
                     String role = (String) roles.next();
-                    // Log.info("Role for user " + userDn + ": " + role); 
                     roleList.add(role.replace(_rolePrefix, ""));
                 } else {
-                    roleList.add(roles.next());
+                    roleList.add((String) roles.next());
                 }
             }
         }
+
+        addSupplementalRoles(roleList);
+
+        if(_nestedGroups) {
+            roleList = getNestedRoles(dirContext, roleList);
+        }
+
         if (roleList.size() < 1) {
-            Log.warn("JettyCachingLdapLoginModule: User '" + username + "' has no role membership; role query configuration may be incorrect");
+            LOG.warn("JettyCachingLdapLoginModule: User '" + username + "' has no role membership; role query configuration may be incorrect");
         }else{
-            Log.debug("JettyCachingLdapLoginModule: User '" + username + "' has roles: " + roleList);
+            LOG.debug("JettyCachingLdapLoginModule: User '" + username + "' has roles: " + roleList);
         }
 
         return roleList;
     }
 
+    protected void addSupplementalRoles(final List<String> roleList) {
+        if (null != _supplementalRoles) {
+            for (String supplementalRole : _supplementalRoles) {
+                if(null!=supplementalRole&& !"".equals(supplementalRole.trim())){
+                    roleList.add(supplementalRole.trim());
+                }
+            }
+        }
+    }
+
+    private List<String> getNestedRoles(DirContext dirContext, List<String> roleList) {
+
+        HashMap<String, List<String>> roleMemberOfMap = new HashMap<String, List<String>>();
+        roleMemberOfMap.putAll(getRoleMemberOfMap(dirContext));
+
+        List<String> mergedList = mergeRoles(roleList, roleMemberOfMap);
+
+        return mergedList;
+    }
+
+    private List<String> mergeRoles(List<String> roles, HashMap<String, List<String>> roleMemberOfMap) {
+        List<String> newRoles = new ArrayList<String>();
+        List<String> mergedRoles = new ArrayList<String>();
+        mergedRoles.addAll(roles);
+
+        for(String role : roles) {
+            if(roleMemberOfMap.containsKey(role)) {
+                for(String newRole : roleMemberOfMap.get(role)) {
+                    if (!roles.contains(newRole)) {
+                        newRoles.add(newRole);
+                    }
+                }
+                roleMemberOfMap.remove(role);
+            }
+
+        }
+        if(!newRoles.isEmpty()) {
+            mergedRoles.addAll(mergeRoles(newRoles, roleMemberOfMap));
+        }
+        return mergedRoles;
+    }
+
+    private ConcurrentHashMap<String, List<String>> getRoleMemberOfMap(DirContext dirContext) {
+        if (_cacheDuration == 0 || System.currentTimeMillis() > roleMemberOfMapExpires) { // only worry about caching if there is a cacheDuration set.
+            roleMemberOfMap = buildRoleMemberOfMap(dirContext);
+            roleMemberOfMapExpires = System.currentTimeMillis() + _cacheDuration;
+        }
+
+        return roleMemberOfMap;
+    }
+
+    private ConcurrentHashMap<String, List<String>> buildRoleMemberOfMap(DirContext dirContext) {
+        Object[] filterArguments = { _roleObjectClass };
+        SearchControls ctls = new SearchControls();
+        ctls.setDerefLinkFlag(true);
+        ctls.setSearchScope(SearchControls.SUBTREE_SCOPE);
+
+        ConcurrentHashMap<String, List<String>> roleMemberOfMap = new ConcurrentHashMap<String, List<String>>();
+
+        try {
+            NamingEnumeration<SearchResult> results = dirContext.search(_roleBaseDn, _roleMemberFilter, ctls);
+            while (results.hasMoreElements()) {
+                SearchResult result = results.nextElement();
+                Attributes attributes = result.getAttributes();
+
+                if (attributes == null) {
+                    continue;
+                }
+
+                Attribute roleAttribute = attributes.get(_roleNameAttribute);
+                Attribute memberAttribute = attributes.get(_roleMemberAttribute);
+
+                if (roleAttribute == null || memberAttribute == null) {
+                    continue;
+                }
+
+                NamingEnumeration role = roleAttribute.getAll();
+                NamingEnumeration members = memberAttribute.getAll();
+
+                if(!role.hasMore() || !members.hasMore()) {
+                    continue;
+                }
+
+                String roleName = (String) role.next();
+                if (_rolePrefix != null && !"".equalsIgnoreCase(_rolePrefix)) {
+                    roleName = roleName.replace(_rolePrefix, "");
+                }
+
+                while(members.hasMore()) {
+                    String member = (String) members.next();
+                    Matcher roleMatcher = rolePattern.matcher(member);
+                    if(!roleMatcher.find()) {
+                        continue;
+                    }
+                    String roleMember = roleMatcher.group(1);
+                    List<String> memberOf;
+                    if(roleMemberOfMap.containsKey(roleMember)) {
+                        memberOf = roleMemberOfMap.get(roleMember);
+                    } else {
+                        memberOf = new ArrayList<String>();
+                    }
+
+                    memberOf.add(roleName);
+
+                    roleMemberOfMap.put(roleMember, memberOf);
+                }
+
+            }
+        } catch (NamingException e) {
+            e.printStackTrace();
+        }
+        return roleMemberOfMap;
+    }
+    protected boolean isDebug(){
+        return _debug;
+    }
+    /**
+     * Default behavior to emit to System.err
+     * @param message message
+     */
+    protected void debug(String message) {
+        if (isDebug()) {
+            LOG.debug(message);
+        }
+    }
+
+
+    /**
+     * Gets credentials by calling {@link #getCallBackAuth()}, then performs {@link #authenticate(String, Object)}
+     *
+     * @return true if authenticated
+     * @throws LoginException
+     */
+    @Override
+    public boolean login() throws LoginException {
+        try{
+            Object[] userPass= getCallBackAuth();
+            if (null == userPass || userPass.length < 2) {
+                setAuthenticated(false);
+            } else {
+                String name = (String) userPass[0];
+                Object pass = userPass[1];
+                setAuthenticated(authenticate(name, pass));
+            }
+            return isAuthenticated();
+        } catch (UnsupportedCallbackException e) {
+            throw new LoginException("Error obtaining callback information.");
+        } catch (IOException e) {
+            if (_debug) {
+                e.printStackTrace();
+            }
+            throw new LoginException("IO Error performing login.");
+        }
+    }
+
+    /**
+     *
+     * @return Return the object[] containing username and password, by using the callback mechanism
+     *
+     * @throws IOException
+     * @throws UnsupportedCallbackException
+     * @throws LoginException
+     */
+    protected Object[] getCallBackAuth() throws IOException, UnsupportedCallbackException, LoginException {
+        if (getCallbackHandler() == null) {
+            throw new LoginException("No callback handler");
+        }
+
+        Callback[] callbacks = configureCallbacks();
+        getCallbackHandler().handle(callbacks);
+
+        String webUserName = ((NameCallback) callbacks[0]).getName();
+        Object webCredential = ((ObjectCallback) callbacks[1]).getObject();
+        return new Object[]{webUserName,webCredential};
+    }
+
+
     /**
      * since ldap uses a context bind for valid authentication checking, we
      * override login()
-     * <p/>
+     * <br>
      * if credentials are not available from the users context or if we are
      * forcing the binding check then we try a binding authentication check,
      * otherwise if we have the users encoded password then we can try
      * authentication via that mechanic
-     * 
-     * @return
+     * @param webUserName user
+     * @param webCredential password
+     *
+     *
+     * @return true if authenticated
      * @throws LoginException
      */
-    public boolean login() throws LoginException {
+    protected boolean authenticate(final String webUserName, final Object webCredential) throws LoginException {
         try {
-            if (getCallbackHandler() == null) {
-                throw new LoginException("No callback handler");
-            }
 
-            Callback[] callbacks = configureCallbacks();
-            getCallbackHandler().handle(callbacks);
-
-            String webUserName = ((NameCallback) callbacks[0]).getName();
-            Object webCredential = ((ObjectCallback) callbacks[1]).getObject();
-
-            if (webUserName == null || webCredential == null) {
+            if (isEmptyOrNull(webUserName) || isEmptyOrNull(webCredential)) {
                 setAuthenticated(false);
                 return isAuthenticated();
             }
 
             loginAttempts++;
-            
+
             if(_reportStatistics)
             {
                 DecimalFormat percentHit = new DecimalFormat("#.##");
-                Log.info("Login attempts: " + loginAttempts + ", Hits: " + userInfoCacheHits + 
+                LOG.info("Login attempts: " + loginAttempts + ", Hits: " + userInfoCacheHits +
                         ", Ratio: " + percentHit.format((double)userInfoCacheHits / loginAttempts * 100f) + "%.");
             }
-            
+
             if (_forceBindingLogin) {
                 return bindingLogin(webUserName, webCredential);
             }
@@ -489,9 +697,13 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
         }
     }
 
+    private boolean isEmptyOrNull(final Object value) {
+        return null==value || "".equals(value);
+    }
+
     /**
      * password supplied authentication check
-     * 
+     *
      * @param webCredential
      * @return
      * @throws LoginException
@@ -506,7 +718,7 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
      * the user branch of the DIT (ldap tree) has an ACI (acces control
      * instruction) that allow the access to any user or at least for the user
      * that logs in.
-     * 
+     *
      * @param username
      * @param password
      * @return
@@ -520,26 +732,26 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
             CachedUserInfo cached = USERINFOCACHE.get(cacheToken);
             if (cached != null) {
                 if (System.currentTimeMillis() < cached.expires) {
-                    Log.debug("Cache Hit for " + username + ".");
+                    LOG.debug("Cache Hit for " + username + ".");
                     userInfoCacheHits++;
-                    
+
                     setCurrentUser(new JAASUserInfo(cached.userInfo));
                     setAuthenticated(true);
                     return true;
                 } else {
-                    Log.info("Cache Eviction for " + username + ".");
+                    LOG.info("Cache Eviction for " + username + ".");
                     USERINFOCACHE.remove(cacheToken);
                 }
             } else {
-                Log.debug("Cache Miss for " + username + ".");
+                LOG.debug("Cache Miss for " + username + ".");
             }
         }
-        
+
         SearchResult searchResult = findUser(username);
 
         String userDn = searchResult.getNameInNamespace();
 
-        Log.info("Attempting authentication: " + userDn);
+        LOG.info("Attempting authentication: " + userDn);
 
         Hashtable environment = getEnvironment();
         environment.put(Context.SECURITY_PRINCIPAL, userDn);
@@ -550,7 +762,7 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
         // use _rootContext to find roles, if configured to doso
         if ( _forceBindingLoginUseRootContextForRoles ) {
             dirContext = _rootContext;
-            Log.debug("Using _rootContext for role lookup.");
+            LOG.debug("Using _rootContext for role lookup.");
         }
         List roles = getUserRolesByDn(dirContext, userDn, username);
 
@@ -559,7 +771,7 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
             USERINFOCACHE.put(cacheToken,
                 new CachedUserInfo(userInfo,
                     System.currentTimeMillis() + _cacheDuration));
-            Log.debug("Adding " + username + " set to expire: " + System.currentTimeMillis() + _cacheDuration);
+            LOG.debug("Adding " + username + " set to expire: " + System.currentTimeMillis() + _cacheDuration);
         }
         setCurrentUser(new JAASUserInfo(userInfo));
         setAuthenticated(true);
@@ -575,13 +787,13 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
 
         String filter = "(&(objectClass={0})({1}={2}))";
 
-        Log.debug("Searching for users with filter: \'" + filter + "\'" + " from base dn: "
+        LOG.debug("Searching for users with filter: \'" + filter + "\'" + " from base dn: "
                 + _userBaseDn);
 
         Object[] filterArguments = new Object[] { _userObjectClass, _userIdAttribute, username };
         NamingEnumeration results = _rootContext.search(_userBaseDn, filter, filterArguments, ctls);
 
-        Log.debug("Found user?: " + results.hasMoreElements());
+        LOG.debug("Found user?: " + results.hasMoreElements());
 
         if (!results.hasMoreElements()) {
             throw new LoginException("User not found.");
@@ -591,13 +803,24 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
     }
 
     @SuppressWarnings("unchecked")
-    public void initialize(Subject subject, CallbackHandler callbackHandler, Map sharedState,
-            Map options) {
+    public void initialize(Subject subject, CallbackHandler callbackHandler, Map<String, ?> sharedState,
+                           Map<String, ?> options) {
         super.initialize(subject, callbackHandler, sharedState, options);
 
+        initializeOptions(options);
+
+        try {
+            _rootContext = new InitialDirContext(getEnvironment());
+        } catch (NamingException ex) {
+            LOG.warn(ex);
+            throw new IllegalStateException("Unable to establish root context: "+ex.getMessage());
+        }
+    }
+
+    public void initializeOptions(final Map options) {
         _hostname = (String) options.get("hostname");
         if(options.containsKey("port")) {
-            _port = Integer.parseInt((String) options.get("port"));   
+            _port = Integer.parseInt((String) options.get("port"));
         }
         _providerUrl = (String) options.get("providerUrl");
         _contextFactory = (String) options.get("contextFactory");
@@ -611,6 +834,10 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
 
         if (options.containsKey("forceBindingLogin")) {
             _forceBindingLogin = Boolean.parseBoolean((String) options.get("forceBindingLogin"));
+        }
+
+        if (options.containsKey("nestedGroups")) {
+            _nestedGroups = Boolean.parseBoolean((String) options.get("nestedGroups"));
         }
 
         if (options.containsKey("forceBindingLoginUseRootContextForRoles")) {
@@ -627,26 +854,34 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
         _roleNameAttribute = getOption(options, "roleNameAttribute", _roleNameAttribute);
         _debug = Boolean.parseBoolean(String.valueOf(getOption(options, "debug", Boolean
                 .toString(_debug))));
+        _ldapsVerifyHostname = Boolean.parseBoolean(String.valueOf(getOption(options, "ldapsVerifyHostname", Boolean
+                .toString(_ldapsVerifyHostname))));
 
         _rolePrefix = (String) options.get("rolePrefix");
-        
+
         _reportStatistics = Boolean.parseBoolean(String.valueOf(getOption(options, "reportStatistics", Boolean
                 .toString(_reportStatistics))));
+
+        Object supplementalRoles = options.get("supplementalRoles");
+        if (null != supplementalRoles) {
+            this._supplementalRoles = new ArrayList<String>();
+            this._supplementalRoles.addAll(Arrays.asList(supplementalRoles.toString().split(", *")));
+        }
 
         String cacheDurationSetting = (String) options.get("cacheDurationMillis");
         if (cacheDurationSetting != null) {
             try {
                 _cacheDuration = Integer.parseInt(cacheDurationSetting);
             } catch (NumberFormatException e) {
-                Log.warn("Unable to parse cacheDurationMillis to a number: " + cacheDurationSetting,
+                LOG.warn("Unable to parse cacheDurationMillis to a number: " + cacheDurationSetting,
                         ". Using default: " + _cacheDuration, e);
             }
         }
-
-        try {
-            _rootContext = new InitialDirContext(getEnvironment());
-        } catch (NamingException ex) {
-            throw new IllegalStateException("Unable to establish root context", ex);
+        if (options.containsKey("timeoutRead")) {
+            _timeoutRead = Long.parseLong((String) options.get("timeoutRead"));
+        }
+        if (options.containsKey("timeoutConnect")) {
+            _timeoutConnect = Long.parseLong((String) options.get("timeoutConnect"));
         }
     }
 
@@ -671,7 +906,7 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
     }
 
     @SuppressWarnings("unchecked")
-    private String getOption(Map options, String key, String defaultValue) {
+    protected String getOption(Map options, String key, String defaultValue) {
         Object value = options.get(key);
 
         if (value == null) {
@@ -683,7 +918,7 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
 
     /**
      * get the context for connection
-     * 
+     *
      * @return
      */
     @SuppressWarnings("unchecked")
@@ -691,20 +926,21 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
         Properties env = new Properties();
 
         env.put(Context.INITIAL_CONTEXT_FACTORY, _contextFactory);
+        String url = null;
         if(_providerUrl != null) {
-            env.put(Context.PROVIDER_URL, _providerUrl);
+            url =  _providerUrl;
         } else {
             if (_hostname != null) {
-                String url = "ldap://" + _hostname + "/";
+                url = "ldap://" + _hostname + "/";
                 if (_port != 0) {
                     url += ":" + _port + "/";
-                } 
-            
-                Log.warn("Using hostname and port.  Use providerUrl instead: " + url);
-                env.put(Context.PROVIDER_URL, url);
+                }
+
+                LOG.warn("Using hostname and port.  Use providerUrl instead: " + url);
             }
         }
-        
+        env.put(Context.PROVIDER_URL, url);
+
         if (_authenticationMethod != null) {
             env.put(Context.SECURITY_AUTHENTICATION, _authenticationMethod);
         }
@@ -715,6 +951,21 @@ public class JettyCachingLdapLoginModule extends AbstractLoginModule {
 
         if (_bindPassword != null) {
             env.put(Context.SECURITY_CREDENTIALS, _bindPassword);
+        }
+        env.put("com.sun.jndi.ldap.read.timeout", Long.toString(_timeoutRead));
+        env.put("com.sun.jndi.ldap.connect.timeout", Long.toString(_timeoutConnect));
+
+        // Set the SSLContextFactory to implementation that validates cert subject
+        if (url != null && url.startsWith("ldaps") && _ldapsVerifyHostname) {
+            try {
+                URI uri = new URI(url);
+                HostnameVerifyingSSLSocketFactory.setTargetHost(uri.getHost());
+                env.put("java.naming.ldap.factory.socket",
+                        "com.dtolabs.rundeck.jetty.jaas.HostnameVerifyingSSLSocketFactory");
+            }
+            catch (URISyntaxException e) {
+                throw new RuntimeException(e);
+            }
         }
 
         return env;

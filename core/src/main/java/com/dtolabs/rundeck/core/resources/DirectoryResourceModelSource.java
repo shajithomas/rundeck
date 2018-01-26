@@ -29,6 +29,8 @@ import com.dtolabs.rundeck.core.common.INodeSet;
 import com.dtolabs.rundeck.core.execution.service.ExecutionServiceException;
 import com.dtolabs.rundeck.core.plugins.configuration.*;
 import com.dtolabs.rundeck.core.resources.format.ResourceFormatParserService;
+import com.dtolabs.rundeck.plugins.util.DescriptionBuilder;
+import com.dtolabs.rundeck.plugins.util.PropertyBuilder;
 import org.apache.log4j.Logger;
 
 import java.io.File;
@@ -40,7 +42,7 @@ import java.util.*;
  *
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  */
-public class DirectoryResourceModelSource implements ResourceModelSource, Configurable {
+public class DirectoryResourceModelSource implements ResourceModelSource, ResourceModelSourceErrors, Configurable {
     static final Logger logger = Logger.getLogger(DirectoryResourceModelSource.class.getName());
     private final Framework framework;
 
@@ -49,36 +51,23 @@ public class DirectoryResourceModelSource implements ResourceModelSource, Config
     }
 
     private Configuration configuration;
-    long lastModTime = 0;
-    private AdditiveListNodeSet listNodeSet = new AdditiveListNodeSet();
-    private ArrayList<ResourceModelSource> fileSources = new ArrayList<ResourceModelSource>();
-    private HashMap<File, ResourceModelSource> sourceCache = new HashMap<File, ResourceModelSource>();
 
-    static ArrayList<Property> properties = new ArrayList<Property>();
+    private final Map<File, ResourceModelSource> sourceCache =
+            Collections.synchronizedMap(new HashMap<File, ResourceModelSource>());
 
-    static {
-        properties.add(PropertyUtil.string(Configuration.DIRECTORY, "Directory Path", "Directory path to scan", true,
-            null));
-    }
+    public static final Description DESCRIPTION = DescriptionBuilder.builder()
+        .name("directory")
+        .title("Directory")
+        .description("Scans a directory and loads all resource document files")
+        .property(PropertyBuilder.builder()
+                      .string(Configuration.DIRECTORY)
+                      .title("Directory Path")
+                      .description("Directory path to scan")
+                      .required(true)
+                      .build()
+        )
+        .build();
 
-    public static final Description DESCRIPTION = new AbstractBaseDescription() {
-        public String getName() {
-            return "directory";
-        }
-
-        public String getTitle() {
-            return "Directory";
-        }
-
-        public String getDescription() {
-            return "Scans a directory and loads all resource document files";
-        }
-
-        public List<Property> getProperties() {
-
-            return properties;
-        }
-    };
     public void configure(final Properties configuration) throws ConfigurationException {
 
         final Configuration configuration1 = Configuration.fromProperties(configuration);
@@ -129,19 +118,58 @@ public class DirectoryResourceModelSource implements ResourceModelSource, Config
 
     public INodeSet getNodes() throws ResourceModelSourceException {
         loadFileSources(configuration.directory, configuration.project);
-        listNodeSet = new AdditiveListNodeSet();
-        loadNodeSets();
-        return listNodeSet;
+        return loadNodeSets();
     }
 
-    private void loadNodeSets() throws ResourceModelSourceException {
-        for (final ResourceModelSource fileSource: fileSources) {
-            try {
-                listNodeSet.addNodeSet(fileSource.getNodes());
-            } catch (ResourceModelSourceException e) {
-                e.printStackTrace();
+    private List<String> sourceErrors;
+
+    @Override
+    public List<String> getModelSourceErrors() {
+        return sourceErrors!=null?Collections.unmodifiableList(sourceErrors):null;
+    }
+
+    private INodeSet loadNodeSets() throws ResourceModelSourceException {
+        synchronized (sourceCache) {
+            ArrayList<String> errs = new ArrayList<>();
+            AdditiveListNodeSet listNodeSet = new AdditiveListNodeSet();
+            for (final File file : sortFiles(sourceCache.keySet())) {
+                try {
+                    listNodeSet.addNodeSet(sourceCache.get(file).getNodes());
+                } catch(ResourceModelSourceException t){
+                    String msg = "Error loading file: " +
+                               file +
+                               ": " +
+                               t.getLocalizedMessage();
+                    errs.add(msg);
+                    logger.warn(msg);
+                    logger.debug(msg,t);
+                } catch(Throwable t){
+                    String msg = "Error loading file: " +
+                               file +
+                               ": " +
+                               t.getClass().getName() +
+                               ": " +
+                               t.getLocalizedMessage();
+                    errs.add(msg);
+                    logger.warn(msg);
+                    logger.debug(msg,t);
+                }
             }
+            sourceErrors=errs;
+            return listNodeSet;
         }
+    }
+    private File[] sortFiles(Collection<File> files){
+        //sort on filename
+        File[] arr = files.toArray(new File[files.size()]);
+        Arrays.sort(
+                arr, new Comparator<File>() {
+                    public int compare(final File file, final File file1) {
+                        return file.getName().compareTo(file1.getName());
+                    }
+                }
+        );
+        return arr;
     }
 
     /**
@@ -149,7 +177,7 @@ public class DirectoryResourceModelSource implements ResourceModelSource, Config
      */
     private void loadFileSources(final File directory, final String project) {
         //clear source sequence
-        fileSources.clear();
+
         if (!directory.isDirectory()) {
             logger.warn("Not a directory: " + directory);
         }
@@ -164,42 +192,50 @@ public class DirectoryResourceModelSource implements ResourceModelSource, Config
         });
 
         //set of previously cached file sources by file
-        final HashSet<File> trackedFiles = new HashSet<File>(sourceCache.keySet());
         if (null != files) {
             //sort on filename
-            Arrays.sort(files, new Comparator<File>() {
-                public int compare(final File file, final File file1) {
-                    return file.getName().compareTo(file1.getName());
-                }
-            });
-            for (final File file : files) {
-                //remove file that we want to keep
-                trackedFiles.remove(file);
-                if (!sourceCache.containsKey(file)) {
-                    try {
-                        final ResourceModelSource source = framework.getResourceModelSourceService().getSourceForConfiguration(
-                            "file",
-                            FileResourceModelSource.Configuration.build()
-                                .project(project)
-                                .file(file)
-                                .generateFileAutomatically(false)
-                                .includeServerNode(false).getProperties()
-                        );
-                        fileSources.add(source);
-                        sourceCache.put(file, source);
+            Arrays.sort(files, null);
+            synchronized (sourceCache) {
+                final HashSet<File> trackedFiles = new HashSet<File>(sourceCache.keySet());
+                for (final File file : files) {
+                    //remove file that we want to keep
+                    trackedFiles.remove(file);
+                    if (!sourceCache.containsKey(file)) {
+                        logger.debug("Adding new resources file to cache: " + file.getAbsolutePath());
+                        try {
+                            final ResourceModelSource source = createFileSource(project, file);
+                            sourceCache.put(file, source);
 
-                    } catch (ExecutionServiceException e) {
-                        e.printStackTrace();
+                        } catch (ExecutionServiceException e) {
+                            e.printStackTrace();
+                            logger.debug("Failed adding file " + file.getAbsolutePath() + ": " + e.getMessage(), e);
+                        }
                     }
-                } else {
-                    fileSources.add(sourceCache.get(file));
+                }
+                //remaining trackedFiles are files that have been removed from the dir
+                for (final File oldFile : trackedFiles) {
+                    logger.debug("Removing from cache: " + oldFile.getAbsolutePath());
+                    sourceCache.remove(oldFile);
                 }
             }
         }
-        //remaining trackedFiles are files that have been removed from the dir
-        for (final File oldFile : trackedFiles) {
-            sourceCache.remove(oldFile);
-        }
+    }
+
+    private ResourceModelSource createFileSource(String project, File file) throws ExecutionServiceException {
+        Properties properties1 = FileResourceModelSource.Configuration.build()
+                                                                      .project(project)
+                                                                      .file(file)
+                                                                      .generateFileAutomatically(
+                                                                              false
+                                                                      )
+                                                                      .includeServerNode(
+                                                                              false
+                                                                      )
+                                                                      .getProperties();
+        return framework.getResourceModelSourceService().getSourceForConfiguration(
+                "file",
+                properties1
+        );
     }
 
     @Override

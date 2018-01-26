@@ -8,20 +8,26 @@ CSS = style.css
 DIST = dist
 DATE = $(shell date "+%Y-%m-%dT%H:%M:%S%Z")
 HRDATE = $(shell date "+%B %e %Y, %H:%M %Z")
+DATE_YEAR = $(shell date "+%Y")
 ifndef VERSION
 VERSION=$(shell grep version.number= ../../version.properties | cut -d= -f 2)
 endif
-RVERSION=$(VERSION)
+
 ifndef TAG
 TAG=$(shell grep version.tag= ../../version.properties | cut -d= -f 2)
 endif
+
 ifneq ($(TAG),GA)
+VERSION=$(VERSION)-$(TAG)
 RVERSION=$(VERSION)-$(TAG)
+else
+RVERSION=$(VERSION)
 endif
 
-EDAM=groovy edam.groovy
 
-.PHONY: man html clean oldlinks
+EDAM=groovy ../scripts/edam.groovy
+
+.PHONY: man html clean 
 
 all : man html resources
 
@@ -30,13 +36,10 @@ man :
 	$(MAKE) VERSION=$(RVERSION) -C manpages/man1
 	$(MAKE) VERSION=$(RVERSION) -C manpages/man5
 
-html: oldlinks
+html: 
 	mkdir -p $(DIST)/html
-	$(EDAM) -o $(DIST)/html -r -O 'recurseDirPatternIgnore=(dist|figures|oldlinks|temp)' -V "VERSION=$(RVERSION)" -V "APIVERS=$(APIVERS)" -V "DATE=$(DATE)" -V "HRDATE=$(HRDATE)"
+	$(EDAM) -o $(DIST)/html  -r -O 'recurseDirPatternIgnore=(dist|figures|temp)' -V "VERSION=$(RVERSION)" -V "APIVERS=$(APIVERS)" -V "DATE=$(DATE)" -V "HRDATE=$(HRDATE)" -V "DATE_YEAR=$(DATE_YEAR)"
 
-oldlinks: oldlinks/*.md
-	mkdir -p $(DIST)/html
-	$(EDAM) -o $(DIST)/html -d oldlinks -t templates -V "DATE=$(DATE)" -V "HRDATE=$(HRDATE)"
 
 resources :  $(CSS) ../figures/*.png
 	mkdir -p $(DIST)/html/figures

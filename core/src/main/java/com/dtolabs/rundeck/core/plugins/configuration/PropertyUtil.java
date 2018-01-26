@@ -23,9 +23,18 @@
 */
 package com.dtolabs.rundeck.core.plugins.configuration;
 
-import java.util.List;
+import static com.dtolabs.rundeck.core.plugins.configuration.Property.Type.Boolean;
+import static com.dtolabs.rundeck.core.plugins.configuration.Property.Type.FreeSelect;
+import static com.dtolabs.rundeck.core.plugins.configuration.Property.Type.Integer;
+import static com.dtolabs.rundeck.core.plugins.configuration.Property.Type.Long;
+import static com.dtolabs.rundeck.core.plugins.configuration.Property.Type.Select;
+import static com.dtolabs.rundeck.core.plugins.configuration.Property.Type.String;
 
-import static com.dtolabs.rundeck.core.plugins.configuration.Property.Type.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+
 
 /**
  * PropertyUtil factory for specific property types
@@ -34,96 +43,540 @@ import static com.dtolabs.rundeck.core.plugins.configuration.Property.Type.*;
  */
 public class PropertyUtil {
     /**
-     * Return a property instance for a particular simple type
+     *
+     * @param type type
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param values optional values list
+     * @return a property instance for a particular simple type
      */
     public static Property forType(final Property.Type type, final String name, final String title,
                                    final String description, final boolean required,
                                    final String defaultValue, final List<String> values) {
+        return forType(type, name, title, description, required, defaultValue, values, null);
+    }
+
+    /**
+     * @param type type
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param values optional values list
+     * @param validator validator
+     * @return a property instance for a particular simple type
+     */
+    public static Property forType(final Property.Type type,
+                                   final String name,
+                                   final String title,
+                                   final String description,
+                                   final boolean required,
+                                   final String defaultValue,
+                                   final List<String> values,
+                                   final PropertyValidator validator) {
+        return forType(type, name, title, description, required, defaultValue, values, validator, null);
+    }
+
+    /**
+     * @param type type
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param values optional values list
+     * @param validator validator
+     * @param scope resolution scope
+     * @return a property instance for a particular simple type
+     */
+    public static Property forType(final Property.Type type,
+                                   final String name,
+                                   final String title,
+                                   final String description,
+                                   final boolean required,
+                                   final String defaultValue,
+                                   final List<String> values,
+                                   final PropertyValidator validator,
+                                   final PropertyScope scope) {
+        return forType(type, name, title, description, required, defaultValue, values, validator, scope, null);
+    }
+    
+    /**
+     * @param type type
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param values optional values list
+     * @param validator validator
+     * @param scope resolution scope
+     * @param renderingOptions options
+     * @return a property instance for a particular simple type
+     */
+    public static Property forType(final Property.Type type,
+                                   final String name,
+                                   final String title,
+                                   final String description,
+                                   final boolean required,
+                                   final String defaultValue,
+                                   final List<String> values,
+                                   final PropertyValidator validator,
+                                   final PropertyScope scope,
+                                   final Map<String, Object> renderingOptions
+    ) {
         switch (type) {
             case Integer:
-                return integer(name, title, description, required, defaultValue);
+                return integer(name, title, description, required, defaultValue, validator, scope, renderingOptions);
             case Boolean:
-                return bool(name, title, description, required, defaultValue);
+                return bool(name, title, description, required, defaultValue, scope, renderingOptions);
             case Long:
-                return longProp(name, title, description, required, defaultValue);
+                return longProp(name, title, description, required, defaultValue, validator, scope, renderingOptions);
             case Select:
-                return PropertyUtil.select(name, title, description, required, defaultValue, values);
+                return PropertyUtil.select(name, title, description, required, defaultValue, values, scope, renderingOptions);
             case FreeSelect:
-                return PropertyUtil.freeSelect(name, title, description, required, defaultValue, values);
+                return PropertyUtil.freeSelect(name, title, description, required, defaultValue, values, validator,
+                                               scope, renderingOptions);
             default:
-                return string(name, title, description, required, defaultValue);
+                return string(name, title, description, required, defaultValue, validator, scope, renderingOptions);
         }
     }
 
-    /**
-     * Return a string property
-     */
-    public static Property string(final String name, final String title, final String description,
-                                  final boolean required,
-                                  final String defaultValue, final Property.Validator validator) {
-        return new StringProperty(name, title, description, required, defaultValue, validator);
-    }
 
     /**
-     * Return a string property
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @return a string property
      */
     public static Property string(final String name, final String title, final String description,
                                   final boolean required,
                                   final String defaultValue) {
-        return new StringProperty(name, title, description, required, defaultValue, null);
+        return string(name, title, description, required, defaultValue, null);
     }
 
     /**
-     * Return a boolean property
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param validator validator
+     * @return  a string property
+     */
+    public static Property string(final String name, final String title, final String description,
+                                  final boolean required,
+                                  final String defaultValue, final PropertyValidator validator) {
+        return string(name, title, description, required, defaultValue, validator, null);
+    }
+    
+    /**
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param validator validator
+     * @param scope resolution scope
+     * @return Return a string property
+     */
+    public static Property string(final String name, final String title, final String description,
+                                  final boolean required,
+                                  final String defaultValue, final PropertyValidator validator,
+                                  final PropertyScope scope) {
+        return string(name, title, description, required, defaultValue, validator, scope, null);
+    }
+
+    /**
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param validator validator
+     * @param scope resolution scope
+     * @param renderingOptions options
+     * @return Return a string property
+     */
+    public static Property string(final String name, final String title, final String description,
+                                  final boolean required,
+                                  final String defaultValue, final PropertyValidator validator,
+                                  final PropertyScope scope, final Map<String, Object> renderingOptions) {
+        return new StringProperty(name, title, description, required, defaultValue, validator, scope, renderingOptions);
+    }
+
+    /**
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @return Return a boolean property
      */
     public static Property bool(final String name, final String title, final String description, final boolean required,
                                 final String defaultValue) {
-        return new BooleanProperty(name, title, description, required, defaultValue);
+        return bool(name, title, description, required, defaultValue, null);
+    }
+    
+    /**
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param scope resolution scope
+     * @return Return a boolean property
+     */
+    public static BooleanProperty bool(String name,
+                                       String title,
+                                       String description,
+                                       boolean required,
+                                       String defaultValue, final PropertyScope scope) {
+        return bool(name, title, description, required, defaultValue, scope, null);
     }
 
     /**
-     * Return an integer property
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param scope resolution scope
+     * @param renderingOptions options
+     * @return  a boolean property
+     */
+    public static BooleanProperty bool(String name,
+                                       String title,
+                                       String description,
+                                       boolean required,
+                                       String defaultValue, final PropertyScope scope, 
+                                       final Map<String, Object> renderingOptions) {
+        return new BooleanProperty(name, title, description, required, defaultValue, scope, renderingOptions);
+    }
+
+    /**
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @return  an integer property
      */
     public static Property integer(final String name, final String title, final String description,
                                    final boolean required,
                                    final String defaultValue) {
-        return new IntegerProperty(name, title, description, required, defaultValue);
+        return integer(name, title, description, required, defaultValue, null);
+
     }
 
     /**
-     * Return a long property
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param validator validator
+     * @return  an integer property with additional validator
+     */
+    public static Property integer(final String name, final String title, final String description,
+                                   final boolean required,
+                                   final String defaultValue, final PropertyValidator validator) {
+
+        return integer(name, title, description, required, defaultValue, validator, null);
+    }
+    
+    /**
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param validator validator
+     * @param scope resolution scope
+     * @return  an integer property with additional validator
+     */
+    public static Property integer(final String name,
+                                   final String title,
+                                   final String description,
+                                   final boolean required,
+                                   final String defaultValue,
+                                   final PropertyValidator validator,
+                                   final PropertyScope scope) {
+        return integer(name, title, description, required, defaultValue, validator, scope, null);
+    }
+
+    /**
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param validator validator
+     * @param scope resolution scope
+     * @param renderingOptions options
+     * @return  an integer property with additional validator
+     */
+    public static Property integer(final String name,
+                                   final String title,
+                                   final String description,
+                                   final boolean required,
+                                   final String defaultValue,
+                                   final PropertyValidator validator,
+                                   final PropertyScope scope,
+                                   final Map<String, Object> renderingOptions) {
+
+        return new IntegerProperty(name, title, description, required, defaultValue, validator, scope, renderingOptions);
+    }
+
+    /**
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @return  a long property
      */
     public static Property longProp(final String name, final String title, final String description,
                                     final boolean required, final String defaultValue) {
+        return longProp(name, title, description, required, defaultValue, null);
+    }
 
-        return new LongProperty(name, title, description, required, defaultValue);
+    /**
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param validator validator
+     * @return  a long property
+     */
+    public static Property longProp(final String name,
+                                    final String title,
+                                    final String description,
+                                    final boolean required,
+                                    final String defaultValue,
+                                    final PropertyValidator validator) {
+        return longProp(name, title, description, required, defaultValue, validator, null);
+    }
+    
+    /**
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param validator validator
+     * @param scope resolution scope
+     * @return  a long property
+     */
+    public static Property longProp(final String name,
+                                    final String title,
+                                    final String description,
+                                    final boolean required,
+                                    final String defaultValue,
+                                    final PropertyValidator validator,
+                                    final PropertyScope scope) {
+        return longProp(name, title, description, required, defaultValue, validator, scope, null);
+    }
+
+    /**
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param validator validator
+     * @param scope resolution scope
+     * @param renderingOptions options
+     * @return  a long property
+     */
+    public static Property longProp(final String name,
+                                    final String title,
+                                    final String description,
+                                    final boolean required,
+                                    final String defaultValue,
+                                    final PropertyValidator validator,
+                                    final PropertyScope scope,
+                                    final Map<String, Object> renderingOptions) {
+        return new LongProperty(name, title, description, required, defaultValue, validator, scope, renderingOptions);
     }
 
 
     /**
-     * Create a Select property with a list of values
+     *
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param selectValues optional values list
+     * @return  a Select property with a list of values
      */
     public static Property select(final String name, final String title, final String description,
                                   final boolean required, final String defaultValue, final List<String> selectValues) {
-
-        return new SelectProperty(name, title, description, required, defaultValue, selectValues);
+        return select(name, title, description, required, defaultValue, selectValues, null);
     }
 
     /**
-     * Create a Free Select property with a list of values
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param selectValues optional values list
+     * @param scope resolution scope
+     * @return a Select property with a list of values
+     */
+    public static Property select(final String name, final String title, final String description,
+                                  final boolean required, final String defaultValue, final List<String> selectValues,
+                                  final PropertyScope scope) {
+
+        return select(name, title, description, required, defaultValue, selectValues, scope, null);
+    }
+    
+    /**
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param selectValues optional values list
+     * @param scope resolution scope
+     * @param renderingOptions options
+     * @return a Select property with a list of values
+     */
+    public static Property select(final String name, final String title, final String description,
+                                  final boolean required, final String defaultValue, final List<String> selectValues,
+                                  final PropertyScope scope, final Map<String, Object> renderingOptions) {
+
+        return new SelectProperty(name, title, description, required, defaultValue, selectValues, scope, renderingOptions);
+    }
+    /**
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param selectValues optional values list
+     * @param scope resolution scope
+     * @param renderingOptions options
+     * @return a Select property with a list of values
+     */
+    public static Property select(final String name, final String title, final String description,
+                                  final boolean required, final String defaultValue, final Collection<? extends Enum<?>> selectValues,
+                                  final PropertyScope scope, final Map<String, Object> renderingOptions) {
+        //create string representation of the enum values
+        ArrayList<String> strings = new ArrayList<String>();
+        for (Enum<?> selectValue : selectValues) {
+            strings.add(selectValue.name());
+        }
+        return new SelectProperty(name, title, description, required, defaultValue, strings, scope,
+                renderingOptions);
+    }
+
+    /**
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param selectValues optional values list
+     * @return a Free Select property with a list of values
      */
     public static Property freeSelect(final String name, final String title, final String description,
                                       final boolean required, final String defaultValue,
                                       final List<String> selectValues) {
+        return freeSelect(name, title, description, required, defaultValue, selectValues, null);
+    }
 
-        return new FreeSelectProperty(name, title, description, required, defaultValue, selectValues);
+    /**
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param selectValues optional values list
+     * @param validator validator
+     * @return a Free Select property with a list of values
+     */
+    public static Property freeSelect(final String name, final String title, final String description,
+                                      final boolean required, final String defaultValue,
+                                      final List<String> selectValues, final PropertyValidator validator) {
+
+        return freeSelect(name, title, description, required, defaultValue, selectValues, validator, null);
+    }
+    
+    /**
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param selectValues optional values list
+     * @param validator validator
+     * @param scope resolution scope
+     * @return a Free Select property with a list of values
+     */
+    public static Property freeSelect(final String name, final String title, final String description,
+                                      final boolean required, final String defaultValue,
+                                      final List<String> selectValues, final PropertyValidator validator,
+                                      final PropertyScope scope) {
+
+        return freeSelect(name, title, description, required, defaultValue, selectValues, validator, scope, null);
+    }
+
+    /**
+     * @param name name
+     * @param title optional title
+     * @param description optional description
+     * @param required true if required
+     * @param defaultValue optional default value
+     * @param selectValues optional values list
+     * @param validator validator
+     * @param scope resolution scope
+     * @param renderingOptions options
+     * @return a Free Select property with a list of values
+     */
+    public static Property freeSelect(final String name, final String title, final String description,
+                                      final boolean required, final String defaultValue,
+                                      final List<String> selectValues, final PropertyValidator validator,
+                                      final PropertyScope scope, final Map<String, Object> renderingOptions) {
+
+        return new FreeSelectProperty(name, title, description, required, defaultValue, selectValues, validator, scope, renderingOptions);
     }
 
     static final class StringProperty extends PropertyBase {
 
-        public StringProperty(final String name, final String title, final String description, final boolean required,
-                              final String defaultValue, final Validator validator) {
-            super(name, title, description, required, defaultValue, validator);
+        public StringProperty(final String name,
+                              final String title,
+                              final String description,
+                              final boolean required,
+                              final String defaultValue,
+                              final PropertyValidator validator,
+                              final PropertyScope scope,
+                              final Map<String, Object> renderingOptions) {
+            super(name, title, description, required, defaultValue, validator, scope, renderingOptions);
         }
 
         public Type getType() {
@@ -131,13 +584,31 @@ public class PropertyUtil {
         }
     }
 
+    static PropertyValidator andValidator(final PropertyValidator first, final PropertyValidator second) {
+        if (null == first) {
+            return second;
+        } else if (null == second) {
+            return first;
+        }
+        return new PropertyValidator() {
+            @Override
+            public boolean isValid(String value) throws ValidationException {
+                return first.isValid(value) && second.isValid(value);
+            }
+        };
+    }
+
     static final class FreeSelectProperty extends PropertyBase {
         final List<String> selectValues;
 
-        public FreeSelectProperty(final String name, final String title, final String description,
+        public FreeSelectProperty(final String name,
+                                  final String title,
+                                  final String description,
                                   final boolean required,
-                                  final String defaultValue, final List<String> selectValues) {
-            super(name, title, description, required, defaultValue, null);
+                                  final String defaultValue,
+                                  final List<String> selectValues, final PropertyValidator validator,
+                                  final PropertyScope scope, final Map<String, Object> renderingOptions) {
+            super(name, title, description, required, defaultValue, validator, scope, renderingOptions);
             this.selectValues = selectValues;
         }
 
@@ -155,8 +626,9 @@ public class PropertyUtil {
         final List<String> selectValues;
 
         public SelectProperty(final String name, final String title, final String description, final boolean required,
-                              final String defaultValue, final List<String> selectValues) {
-            super(name, title, description, required, defaultValue, new SelectValidator(selectValues));
+                              final String defaultValue, final List<String> selectValues, final PropertyScope scope, 
+                              final Map<String, Object> renderingOptions) {
+            super(name, title, description, required, defaultValue, new SelectValidator(selectValues), scope, renderingOptions);
             this.selectValues = selectValues;
         }
 
@@ -170,7 +642,7 @@ public class PropertyUtil {
         }
     }
 
-    static final class SelectValidator implements Property.Validator {
+    static final class SelectValidator implements PropertyValidator {
 
         final List<String> selectValues;
 
@@ -185,8 +657,8 @@ public class PropertyUtil {
 
     static final class BooleanProperty extends PropertyBase {
         public BooleanProperty(final String name, final String title, final String description, final boolean required,
-                               final String defaultValue) {
-            super(name, title, description, required, defaultValue, booleanValidator);
+                               final String defaultValue, final PropertyScope scope, Map<String, Object> renderingOptions) {
+            super(name, title, description, required, defaultValue, booleanValidator, scope, renderingOptions);
         }
 
         public Type getType() {
@@ -194,7 +666,7 @@ public class PropertyUtil {
         }
     }
 
-    static final Property.Validator booleanValidator = new Property.Validator() {
+    static final PropertyValidator booleanValidator = new PropertyValidator() {
         public boolean isValid(final String value) throws ValidationException {
             return "true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value);
         }
@@ -202,8 +674,9 @@ public class PropertyUtil {
 
     static final class IntegerProperty extends PropertyBase {
         public IntegerProperty(final String name, final String title, final String description, final boolean required,
-                               final String defaultValue) {
-            super(name, title, description, required, defaultValue, integerValidator);
+                               final String defaultValue, final PropertyValidator validator, final PropertyScope scope, 
+                               final Map<String, Object> renderingOptions) {
+            super(name, title, description, required, defaultValue, andValidator(integerValidator, validator), scope, renderingOptions);
         }
 
         public Type getType() {
@@ -212,7 +685,7 @@ public class PropertyUtil {
 
     }
 
-    static final Property.Validator integerValidator = new Property.Validator() {
+    static final PropertyValidator integerValidator = new PropertyValidator() {
         public boolean isValid(final String value) throws ValidationException {
             try {
                 java.lang.Integer.parseInt(value);
@@ -225,8 +698,9 @@ public class PropertyUtil {
 
     static final class LongProperty extends PropertyBase {
         public LongProperty(final String name, final String title, final String description, final boolean required,
-                            final String defaultValue) {
-            super(name, title, description, required, defaultValue, longValidator);
+                            final String defaultValue, final PropertyValidator validator, final PropertyScope scope,
+                            final Map<String, Object> renderingOptions) {
+            super(name, title, description, required, defaultValue, andValidator(longValidator, validator), scope, renderingOptions);
         }
 
         public Type getType() {
@@ -235,7 +709,7 @@ public class PropertyUtil {
 
     }
 
-    static final Property.Validator longValidator = new Property.Validator() {
+    static final PropertyValidator longValidator = new PropertyValidator() {
         public boolean isValid(final String value) throws ValidationException {
             try {
                 java.lang.Long.parseLong(value);
@@ -251,7 +725,7 @@ public class PropertyUtil {
 
         public Generic(final String name, final String title, final String description, final boolean required,
                        final String defaultValue,
-                       final Validator validator, final Type type) {
+                       final PropertyValidator validator, final Type type) {
             super(name, title, description, required, defaultValue, validator);
             this.type = type;
         }

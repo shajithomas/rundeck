@@ -30,12 +30,13 @@ import com.dtolabs.rundeck.core.plugins.configuration.*;
 import com.dtolabs.rundeck.core.resources.format.ResourceFormatParser;
 import com.dtolabs.rundeck.core.resources.format.ResourceFormatParserException;
 import com.dtolabs.rundeck.core.resources.format.UnsupportedFormatException;
+import com.dtolabs.rundeck.plugins.util.DescriptionBuilder;
+import com.dtolabs.rundeck.plugins.util.PropertyBuilder;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.log4j.Logger;
 
 import java.io.File;
 import java.net.MalformedURLException;
-import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.Charset;
@@ -63,51 +64,53 @@ public class URLResourceModelSource implements ResourceModelSource, Configurable
     }
 
     final static HashSet<String> allowedProtocols = new HashSet<String>(Arrays.asList("http", "https", "file"));
+    public static final class URLValidator implements PropertyValidator {
+        public boolean isValid (String value)throws ValidationException {
+            final URL url;
 
-    static ArrayList<Property> properties = new ArrayList<Property>();
-
-    static {
-        properties.add(PropertyUtil.string(Configuration.URL, "URL", "URL for the remote resource model document", true,
-            null, new Property.Validator() {
-            public boolean isValid(String value) throws ValidationException {
-                final URL url;
-
-                try {
-                    url = new URL(value);
-                } catch (MalformedURLException e) {
-                    throw new ValidationException(e.getMessage());
-                }
-                if (null != url && !allowedProtocols.contains(url.getProtocol().toLowerCase())) {
-                    throw new ValidationException("url protocol not supported: " + url.getProtocol());
-                }
-                return true;
+            try {
+                url = new URL(value);
+            } catch (MalformedURLException e) {
+                throw new ValidationException(e.getMessage());
             }
-        }));
-        properties.add(PropertyUtil.integer(Configuration.TIMEOUT, "Timeout",
-            "Timeout (in seconds) before requests fail. 0 means no timeout.", false, "30"));
-        properties.add(PropertyUtil.bool(Configuration.CACHE, "Cache results",
-            "Refresh results only if modified?", true, "true"));
-
+            if (null != url && !allowedProtocols.contains(url.getProtocol().toLowerCase())) {
+                throw new ValidationException("url protocol not supported: " + url.getProtocol());
+            }
+            return true;
+        }
     }
 
-    public static final Description DESCRIPTION = new AbstractBaseDescription() {
-        public String getName() {
-            return "url";
-        }
+    public static final Description DESCRIPTION = DescriptionBuilder.builder()
+        .name("url")
+        .title("URL Source")
+        .description("Retrieves a URL containing node definitions in a supported format")
 
-        public String getTitle() {
-            return "URL Source";
-        }
+        .property(PropertyBuilder.builder()
+                      .string(Configuration.URL)
+                      .title("URL")
+                      .description("URL for the remote resource model document")
+                      .required(true)
+                      .validator(new URLValidator())
+                      .build()
+        )
 
-        public String getDescription() {
-            return "Retrieves a URL containing node definitions in a supported format";
-        }
+        .property(PropertyBuilder.builder()
+                      .integer(Configuration.TIMEOUT)
+                      .title("Timeout")
+                      .description("Timeout (in seconds) before requests fail. 0 means no timeout.")
+                      .defaultValue("30")
+                      .build()
+        )
+        .property(PropertyBuilder.builder()
+                      .booleanType(Configuration.CACHE)
+                      .title("Cache results")
+                      .description("Refresh results only if modified?")
+                      .required(true)
+                      .defaultValue("true")
+                      .build()
+        )
+        .build();
 
-        public List<Property> getProperties() {
-
-            return properties;
-        }
-    };
 
     public static class Configuration {
         public static final String URL = "url";
@@ -232,14 +235,12 @@ public class URLResourceModelSource implements ResourceModelSource, Configurable
         this.configuration = new Configuration(configuration);
         this.configuration.validate();
         //set destination temp file
-        final FrameworkProject frameworkProject = framework.getFrameworkProjectMgr().getFrameworkProject(
-            this.configuration.project);
 
         tempFileName = hashURL(this.configuration.nodesUrl.toExternalForm()) + ".temp";
-        destinationTempFile = new File(frameworkProject.getBaseDir(),
-            "var/urlResourceModelSourceCache/" + tempFileName);
-        destinationCacheData = new File(frameworkProject.getBaseDir(),
-            "var/urlResourceModelSourceCache/" + tempFileName + ".cache.properties");
+        destinationTempFile = new File(framework.getFilesystemFramework().getBaseDir(),
+            "var/urlResourceModelSourceCache/"+this.configuration.project+"/" + tempFileName);
+        destinationCacheData = new File(framework.getFilesystemFramework().getBaseDir(),
+            "var/urlResourceModelSourceCache/" +this.configuration.project+"/"+ tempFileName + ".cache.properties");
         if (!destinationTempFile.getParentFile().isDirectory() && !destinationTempFile.getParentFile().mkdirs()) {
             logger.warn(
                 "Unable to create destination directory: " + destinationTempFile.getParentFile().getAbsolutePath());

@@ -23,12 +23,14 @@ import java.io.*;
 import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 /**
  * give us ability to set all framework/modules.* properties at the cmd line
- * such as --framework.property.name=<value>, which implies:
- * framework.property.name=<value>
+ * such as --framework.property.name=&lt;value&gt;, which implies:
+ * framework.property.name=&lt;value&gt;
  * by generating a preferences.properties file that contains overridden values otherwise default values
  * from new defaults file apply.
  */
@@ -39,7 +41,6 @@ public class Preferences {
     public static final String ENV_JAVA_HOME = System.getProperty("user.java_home");
 
     // required properties
-    public static final String SYSTEM_RDECK_HOME = Constants.getSystemHomeDir();
     public static final String SYSTEM_RDECK_BASE = Constants.getSystemBaseDir();
 
     // location of default properties file which some of them can be overridden at setup time
@@ -47,23 +48,20 @@ public class Preferences {
 
     /**
      * generate preferences file represented by preferences String
+     * @param args arg strings
+     * @param preferences prefs
+     * @param inputProps input
+     * @throws Exception on error
      */
     public static void generate(String args[], String preferences, Properties inputProps) throws Exception {
         String base;
-        String homedir;
         base = inputProps.getProperty("rdeck.base");
-        homedir = inputProps.getProperty("rdeck.home");
         if ((null == ENV_JAVA_HOME || "".equals(ENV_JAVA_HOME)) && (null == JAVA_HOME || "".equals(JAVA_HOME))){
             throw new Exception("property: java.home, not defined");
         }
         if(null==base) {
             base = SYSTEM_RDECK_BASE;
         }
-        if(null==homedir) {
-            homedir = SYSTEM_RDECK_HOME;
-        }
-        if (null == homedir || "".equals(homedir))
-            throw new Exception("property: rdeck.home, not defined");
         if (null == base || "".equals(base))
             throw new Exception("property: rdeck.base, not defined");
 
@@ -82,16 +80,18 @@ public class Preferences {
         Properties defaultProperties = new Properties();
 
         //
-        // bootstrap the rdeck.home, rdeck.base, ant.home, and java.home
+        // bootstrap the rdeck.base, ant.home, and java.home
         //
         String jhome = ENV_JAVA_HOME;
         if(null==jhome) {
             jhome = JAVA_HOME;
         }
         defaultProperties.setProperty("user.java_home", forwardSlashPath(jhome));
+        defaultProperties.setProperty("user.java_home.win", backSlashPath(jhome));
         defaultProperties.setProperty("java.home", forwardSlashPath(jhome));
-        defaultProperties.setProperty("rdeck.home", forwardSlashPath(homedir));
+        defaultProperties.setProperty("java.home.win", backSlashPath(jhome));
         defaultProperties.setProperty("rdeck.base", forwardSlashPath(base));
+        defaultProperties.setProperty("rdeck.base.win", backSlashPath(base));
 
         //
         // additional properties needed for successful rdeck setup, based on above
@@ -99,11 +99,17 @@ public class Preferences {
         //
         defaultProperties.setProperty("framework.projects.dir", forwardSlashPath(Constants.getFrameworkProjectsDir(
             base)));
+        defaultProperties.setProperty("framework.projects.dir.win", backSlashPath(Constants.getFrameworkProjectsDir(
+            base)));
         defaultProperties.setProperty("framework.rdeck.base", forwardSlashPath(base));
+        defaultProperties.setProperty("framework.rdeck.base.win", backSlashPath(base));
         final String configDir = Constants.getFrameworkConfigDir(base);
         defaultProperties.setProperty("framework.etc.dir", forwardSlashPath(configDir));
+        defaultProperties.setProperty("framework.etc.dir.win", backSlashPath(configDir));
         defaultProperties.setProperty("framework.var.dir", forwardSlashPath(Constants.getBaseVar(base)));
+        defaultProperties.setProperty("framework.var.dir.win", backSlashPath(Constants.getBaseVar(base)));
         defaultProperties.setProperty("framework.logs.dir", forwardSlashPath(Constants.getFrameworkLogsDir(base)));
+        defaultProperties.setProperty("framework.logs.dir.win", backSlashPath(Constants.getFrameworkLogsDir(base)));
 
         Enumeration propEnum = systemProperties.propertyNames();
         //list of path properties to convert slashes on
@@ -128,8 +134,8 @@ public class Preferences {
         // and return new expandedDefaultProperties
         Properties expandedDefaultProperties = PropertyUtil.expand(defaultProperties);
 
-        // parse any --<framework|modules>-<property>-<name>=<value> as
-        // <framework|modules>.<property>.<name>=<value> and ensure it is a valid property
+        // parse any --<framework|modules>-<property>-<name>=&lt;value&gt; as
+        // <framework|modules>.<property>.<name>=&lt;value&gt; and ensure it is a valid property
 
         // ensure ${rdeck_base}/etc exists
         File rdeck_base_etc = new File(configDir);
@@ -270,6 +276,13 @@ public class Preferences {
     public static String forwardSlashPath(String input) {
         if (System.getProperties().get("file.separator").equals("\\")) {
             return input.replaceAll("\\\\", "/");
+        }
+        return input;
+    }
+
+    public static String backSlashPath(String input) {
+        if (System.getProperties().get("file.separator").equals("\\")) {
+            return input.replaceAll(Pattern.quote("/"), Matcher.quoteReplacement("\\"));
         }
         return input;
     }

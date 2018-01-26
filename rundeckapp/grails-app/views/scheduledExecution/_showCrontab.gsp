@@ -1,13 +1,14 @@
+<%@ page import="rundeck.UtilityTagLib; rundeck.ScheduledExecution" %>
 
 <div class="floatl clear crontab">
     <g:set var="crontab" value="${scheduledExecution?.timeAndDateAsBooleanMap()}"/>
     <div class="floatl ">
         <div class="checklist">
-            at <span class="cronselected" style="display:inline;">${scheduledExecution?.hour}
+            at <span class="cronselected" style="display:inline;"><g:enc>${scheduledExecution?.hour}</g:enc>
     :
-    ${scheduledExecution?.minute?.size()<2 ? "0"+scheduledExecution?.minute : scheduledExecution?.minute}
+    <g:enc>${scheduledExecution?.minute?.size()<2 ? "0"+scheduledExecution?.minute : scheduledExecution?.minute}</g:enc>
             <g:if test="${scheduledExecution?.seconds !='0'}">
-                : ${scheduledExecution?.seconds?.size()<2 ? "0"+scheduledExecution?.seconds : scheduledExecution?.seconds}
+                : <g:enc>${scheduledExecution?.seconds?.size()<2 ? "0"+scheduledExecution?.seconds : scheduledExecution?.seconds}</g:enc>
             </g:if>
     </span>
         </div>

@@ -1,4 +1,4 @@
-% rd-setup(1) | Version ${VERSION}
+% rd-setup
 % Alex Honor
 % November 20, 2010
 
@@ -8,34 +8,31 @@ rd-setup - Setup the Rundeck software after the distribution has been extracted 
 
 # SYNOPSIS
 
-rd-setup [-fv] -n nodename [-N hostname] [-s serverhostname] [ \--key=value ]...
+`rd-setup [-v] -n nodename [-N hostname] [ --key=value ]...`
 
 # DESCRIPTION
 
 The rd-setup command is used to setup the Rundeck software after the distribution has been extracted into its installation directory.
 
-During the first time installation or if the -f flag is set rd-setup
+During the first time installation rd-setup
 will create a new instance of the framework and generate all the
 configuration files found in $RDECK_BASE/etc.
 
 # OPTIONS
 
--h
+`-h`
 : displays the usage information presented above.
 
--v
+`-v`
 : run verbose.
 
--f
-: Force re-generation of configuration files
-
--n
+`-n`
 : The nodename
 
--N
+`-N`
 : The hostname
 
-\--key=value
+`--key=value`
 : Override the default values during the installation by specifying one or more \--key=value combinations.
 
 # ENVIRONMENT VARIABLES #
@@ -56,12 +53,16 @@ of rd-setup:
 Execute the rd-setup command defining the hostname setting as
 "adminhost":
 
-    rd-setup -n adminhost
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ {.bash}
+rd-setup -n adminhost
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
 
 Execute the rd-setup command defining the framework hostname as
 "localhost" and specifies the framework.ssh.keypath value
 
-    rd-setup -n localhost --framework.ssh.keypath=/path/to/keyfile
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ {.bash}
+rd-setup -n localhost --framework.ssh.keypath=/path/to/keyfile
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
 
 # FILES #
 
@@ -73,7 +74,4 @@ rd-defaults.properties but these can be overridden using
 
 # SEE ALSO
 
-[`rd-project` (1)](rd-project.html).
-
-The Rundeck source code and all documentation may be downloaded from
-<https://github.com/dtolabs/rundeck/>.
+[`rd-project`](rd-project.html).

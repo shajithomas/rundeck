@@ -20,15 +20,25 @@
     Created: 7/28/11 2:16 PM
  --%>
 
-<%@ page contentType="text/html;charset=UTF-8" %>
+<%@ page import="com.dtolabs.rundeck.core.plugins.configuration.PropertyScope" contentType="text/html;charset=UTF-8" %>
+<div class="container">
+
 
 <g:if test="${description}">
-    <span class="prompt">${description.title.encodeAsHTML()}</span>
-    <span class="info">${description.description.encodeAsHTML()}</span>
+    <div class="row">
+    <div class="col-sm-12">
+    <div class="h4 text-info"><g:enc>${description.title}</g:enc>
+        <small class="text-muted"><g:enc>${description.description}</g:enc></small>
+    </div>
+
+    </div>
+    </div>
 </g:if>
-<div class="presentation">
+<div class="row ${description?'row-space':''}">
     <g:if test="${error}">
-        <span class="error note resourceConfigEdit">${error}</span>
+        <div class="col-sm-12">
+        <div class="alert alert-warning resourceConfigEdit"><g:enc>${error}</g:enc></div>
+        </div>
     </g:if>
     <g:if test="${isCreate}">
         <g:hiddenField name="isCreate" value="true" class="isCreate"/>
@@ -39,22 +49,31 @@
     <g:hiddenField name="prefix" value="${prefix}"/>
     <g:hiddenField name="${prefix+'type'}" value="${type}"/>
     <g:if test="${description}">
-        <table class="simpleForm">
-        <g:each in="${description.properties}" var="prop">
-            <tr>
-            <g:render template="pluginConfigPropertyField" model="${[prop:prop,prefix:prefix,error:report?.errors?report?.errors[prop.name]:null,values:values,fieldname:prefix+'config.'+prop.name,origfieldname:'orig.'+prefix+'config.'+prop.name]}"/>
-            </tr>
-        </g:each>
-        </table>
+        <div class="col-sm-12 form-horizontal">
+
+            <g:render template="/framework/pluginConfigPropertiesInputs" model="${[
+                    properties:description.properties,
+                    report:report,
+                    prefix:prefix,
+                    values:values,
+                    fieldnamePrefix:prefix+'config.',
+                    origfieldnamePrefix:'orig.'+prefix+'config.',
+                    allowedScope: PropertyScope.Project
+            ]}"/>
+        </div>
     </g:if>
     <g:else>
+        <div class="col-sm-12">
         <span>Properties:</span>
         <ul>
         <g:each var="prop" in="${values}">
-        <li>${prop.name.encodeAsHTML()}: ${prop.value.encodeAsHTML()} </li>
-            <input type="hidden" name="${(prefix + 'config.' + prop.name).encodeAsHTML()}"
-                   value="${prop.value?.encodeAsHTML()}"/>
+        <li><g:enc>${prop.name}: ${prop.value}</g:enc> </li>
+            <input type="hidden" name="${enc(attr:prefix + 'config.' + prop.name)}"
+                   value="${enc(attr:prop.value)}"/>
         </g:each>
         </ul>
+        </div>
     </g:else>
+</div>
+
 </div>

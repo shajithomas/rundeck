@@ -1,67 +1,83 @@
+<%@ page import="com.dtolabs.rundeck.server.authorization.AuthConstants; rundeck.Execution" %>
+<div class="row">
+    <g:render template="/scheduledExecution/showHead"
+              model="[scheduledExecution: scheduledExecution,
+                      followparams: [mode: followmode, lastlines: params.lastlines],
+                      jobDescriptionMode:'expanded',
+                      jobActionButtons:true,
+                      scmExportEnabled:scmExportEnabled,
+                      scmExportStatus:scmExportStatus,
+                      scmImportEnabled:scmImportEnabled,
+                      scmImportStatus:scmImportStatus
+              ]"/>
+</div>
+<g:set var="runAccess" value="${auth.jobAllowedTest(job: scheduledExecution, action: AuthConstants.ACTION_RUN)}"/>
+<g:set var="runEnabled" value="${g.executionMode(is:'active')}"/>
+<g:set var="canRunJob" value="${runAccess && runEnabled}"/>
+<div class="row">
+    <div class="col-sm-12">
+        <ul class="nav nav-tabs">
+            <g:if test="${canRunJob}">
+                <li class="active"><a href="#runjob" data-toggle="tab"><g:message
+                        code="scheduledExecution.show.run.tab.name"/></a></li>
+            </g:if>
+            <g:else>
+                <li class="disabled">
+                    <a href="#"
+                       title="${message(code:!runEnabled?'disabled.job.run':'unauthorized.job.run')}"
+                       class="has_tooltip"
+                       data-placement="bottom">
+                        <g:message code="scheduledExecution.show.run.tab.name"/>
+                    </a>
+                </li>
+            </g:else>
+            <li class="${canRunJob ? '' : 'active'}"><a href="#schedExDetails"
+                                                        data-toggle="tab"><g:message code="definition"/></a></li>
+        </ul>
+
+        <div class="tab-content">
+            <g:if test="${canRunJob}">
+                <div class="tab-pane active" id="runjob">
+                    <tmpl:execOptionsForm
+                            model="${[scheduledExecution: scheduledExecution, crontab: crontab, authorized: authorized]}"
+                            hideHead="${true}"
+                            hideCancel="${true}"
+                            defaultFollow="${true}"/>
+                </div>
+            </g:if>
+            <div id="schedExDetails"
+                 class="tab-pane panel panel-default panel-tab-content  ${canRunJob ? '' : 'active'}">
+                <div class="panel-body">
+                    <g:render template="/execution/execDetails" model="[execdata: scheduledExecution, showEdit: true, hideOptions: true, knockout: true]"/>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<div class="row">
+    <div class="col-sm-12 ">
+        <h4 class="text-muted"><g:message code="statistics" /></h4>
+
+        <g:render template="/scheduledExecution/renderJobStats" model="${[scheduledExecution: scheduledExecution]}"/>
+    </div>
+</div>
+
+<div class="row" id="activity_section">
+    <div class="col-sm-12">
+        <h4 class="text-muted"><g:message code="page.section.Activity.for.this.job" /></h4>
+
+        <g:render template="/reports/activityLinks" model="[scheduledExecution: scheduledExecution, knockoutBinding:true]"/>
+    </div>
+</div>
+
+<!--[if (gt IE 8)|!(IE)]><!--> <g:javascript library="ace/ace"/><!--<![endif]-->
 <g:javascript>
-/** START history
-         *
-         */
-        function loadHistory(){
-            new Ajax.Updater('histcontent',"${createLink(controller: 'reports', action: 'eventsFragment')}",{
-                parameters:{compact:true,nofilters:true,jobIdFilter:'${scheduledExecution.id}'},
-                evalScripts:true,
-                onComplete: function(transport) {
-                    if (transport.request.success()) {
-                        Element.show('histcontent');
-                    }
-                }
-            });
-        }
-
-    function init(){
-        $$('.obs_bubblepopup').each(function(e) {
-            new BubbleController(e,null,{offx:-14,offy:null}).startObserving();
+    fireWhenReady('schedExDetails', function (z) {
+        jQuery('.apply_ace').each(function () {
+            _applyAce(this,'400px');
         });
-    }
-    Event.observe(window,'load',init);
-
+    });
 </g:javascript>
-
-<div class="pageTop extra">
-    <div class="jobHead">
-        <g:render template="/scheduledExecution/showHead" model="[scheduledExecution:scheduledExecution,execution:execution,followparams:[mode:followmode,lastlines:params.lastlines]]"/>
-    </div>
-
-    <div style="vertical-align:top;width: 200px;" class="toolbar small">
-        <g:render template="/scheduledExecution/actionButtons" model="${[scheduledExecution:scheduledExecution,objexists:objexists,jobAuthorized:jobAuthorized]}"/>
-        <g:set var="lastrun" value="${scheduledExecution.id?Execution.findByScheduledExecutionAndDateCompletedIsNotNull(scheduledExecution,[max: 1, sort:'dateStarted', order:'desc']):null}"/>
-        <g:set var="successcount" value="${scheduledExecution.id?Execution.countByScheduledExecutionAndStatus(scheduledExecution,'true'):0}"/>
-        <g:set var="execCount" value="${scheduledExecution.id?Execution.countByScheduledExecution(scheduledExecution):0}"/>
-        <g:set var="successrate" value="${execCount>0? (successcount/execCount) : 0}"/>
-        <g:render template="/scheduledExecution/showStats" model="[scheduledExecution:scheduledExecution,lastrun:lastrun?lastrun:null, successrate:successrate]"/>
-    </div>
-    <div class="clear"></div>
-</div>
-
-<div class="pageBody" id="schedExecPage">
-
-    %{--<g:expander key="schedExDetails${scheduledExecution?.id?scheduledExecution?.id:''}" imgfirst="true">Details</g:expander>--}%
-    <span class="prompt">Details</span>
-    <div class="presentation"  id="schedExDetails${scheduledExecution?.id}" style="max-width:600px; width:600px;">
-        <g:render template="showDetail" model="[scheduledExecution:scheduledExecution]"/>
-
-    </div>
-
-    <g:if test="${flash.message}">
-        <div class="message">${flash.message}</div>
-    </g:if>
-    <g:if test="${message}">
-        <div class="message">${message}</div>
-    </g:if>
-    <div class="pageMessage" id="showPageMessage" style="display: none;"></div>
-    <g:render template="/common/messages"/>
-
-</div>
-<div class="runbox">History</div>
-<div class="pageBody">
-    <div id="histcontent"></div>
-    <g:javascript>
-        fireWhenReady('histcontent', loadHistory);
-    </g:javascript>
-</div>

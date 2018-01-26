@@ -47,16 +47,11 @@ public final class Constants {
 
     // java.home
     public static final String JAVA_HOME = System.getProperty("java.home");
+    public static final String CLI_LOG4J_PROPERTIES = System.getProperty("rundeck.cli.log4j.config",
+                                                                         "cli-log4j.properties");
 
     /**
-     * Get the value of the "rdeck.home" system property, home directory of the rdeck installation
-     */
-    public static String getSystemHomeDir() {
-        return System.getProperty("rdeck.home");
-    }
-
-    /**
-     * RDECK_BASE, base directory patch for instance of client, equivalent to ${rdeck.base}
+     * @return RDECK_BASE, base directory patch for instance of client, equivalent to ${rdeck.base}
      */
     public static String getSystemBaseDir() {
         return System.getProperty("rdeck.base");
@@ -67,7 +62,7 @@ public final class Constants {
     /* ******* The rest of these Constants mostly depend on the bootstrapping constants above */
 
     /**
-     * the framework configuration directory
+     * @return the framework configuration directory
      *
      * @param rdeck_base Ctl Base directory
      */
@@ -76,8 +71,6 @@ public final class Constants {
     }
 
     /**
-     * Helper method to {@link #getFrameworkConfigDir()}
-     *
      * @return configDirectory.
      */
     public static String getFrameworkConfigDir() {
@@ -89,7 +82,7 @@ public final class Constants {
     }
 
     /**
-     * path to framework.properties file
+     * @return path to framework.properties file
      *
      * @param rdeck_base Ctl Base directory
      */
@@ -98,12 +91,12 @@ public final class Constants {
     }
 
     /**
-     * get path to log4j.properties file
+     * @return get path to log4j.properties file
      *
      * @param rdeck_base Ctl Base directory
      */
     public static String getLog4jProperties(final String rdeck_base) {
-        return getFrameworkConfigDir(rdeck_base) + FILE_SEP + "log4j.properties";
+        return getFrameworkConfigDir(rdeck_base) + FILE_SEP + CLI_LOG4J_PROPERTIES;
     }
 
     public static String getLog4jProperties() {
@@ -115,7 +108,7 @@ public final class Constants {
     }
 
     /**
-     * path to the rdeck framework defaults file for template filterization
+     * @return path to the rdeck framework defaults file for template filterization
      */
     public static String getDefaultsPropertiesName() {
         return "run-defaults.properties";
@@ -123,7 +116,7 @@ public final class Constants {
 
 
     /**
-     * path to the framework preferences file for setup
+     * @return path to the framework preferences file for setup
      *
      * @param rdeck_base Ctl Base directory
      */
@@ -133,31 +126,47 @@ public final class Constants {
 
 
     /**
-     * the var subdir for RDECK_BASE, containing framework logs, etc
+     * @return the var subdir for RDECK_BASE, containing framework logs, etc
      *
      * @param rdeck_base Ctl Base directory
      */
     public static String getBaseVar(final String rdeck_base) {
         return rdeck_base + FILE_SEP + "var";
     }
+    
+    /**
+     * @return the scratch directory used for temporary storage located within the 
+     * the directory returned by {@link getSystemBaseDir}
+     */
+    public static String getBaseTempDirectory() {
+        return getBaseTempDirectory(getSystemBaseDir());
+    }
 
     /**
-     * Return framework projects dir
+     * @return the scratch directory used for temporary storage located within the 
+     * the provided rdeck_base param
+     * 
+     * @param rdeck_base the prefix location for the scratch directory
+     */
+    public static String getBaseTempDirectory(final String rdeck_base) {
+        return getBaseVar(rdeck_base) + FILE_SEP + "tmp";
+    }
+
+    /**
+     * @return framework projects dir
      *
      * @param rdeck_base Ctl Base directory
      *
-     * @return
      */
     public static String getFrameworkProjectsDir(final String rdeck_base) {
         return System.getProperty("rdeck.projects", rdeck_base + FILE_SEP + "projects");
     }
 
     /**
-     * Return framework logs dir
+     * @return framework logs dir
      *
      * @param rdeck_base Ctl Base directory
      *
-     * @return
      */
     public static String getFrameworkLogsDir(final String rdeck_base) {
         return System.getProperty("rdeck.runlogs", getBaseVar(rdeck_base) + FILE_SEP + "logs");
@@ -170,6 +179,7 @@ public final class Constants {
      * SSH related properties
      */
     public static final String SSH_KEYPATH_PROP = "framework.ssh.keypath";
+    public static final String SSH_KEYRESOURCE_PROP = "framework.ssh.key.resource";
     public static final String SSH_USER_PROP = "framework.ssh.user";
     public static final String SSH_TIMEOUT_PROP = "framework.ssh.timeout";
 

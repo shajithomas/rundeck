@@ -33,9 +33,12 @@ import com.dtolabs.rundeck.core.plugins.ScriptPluginProvider;
 import com.dtolabs.rundeck.core.plugins.configuration.Describable;
 import com.dtolabs.rundeck.core.plugins.configuration.DescribableService;
 import com.dtolabs.rundeck.core.plugins.configuration.Description;
+import com.dtolabs.rundeck.core.resources.format.json.ResourceJsonFormatGenerator;
+import com.dtolabs.rundeck.plugins.ServiceNameConstants;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -46,14 +49,18 @@ import java.util.List;
 public class ResourceFormatGeneratorService extends PluggableProviderRegistryService<ResourceFormatGenerator> implements
     DescribableService {
 
-    public static final String SERVICE_NAME = "ResourceFormatGenerator";
+    public static final String SERVICE_NAME = ServiceNameConstants.ResourceFormatGenerator;
 
+    public List<String> getBundledProviderNames() {
+        return Collections.unmodifiableList(new ArrayList<String>(registry.keySet()));
+    }
 
     public ResourceFormatGeneratorService(final Framework framework) {
         super(framework);
 
         registry.put(ResourceXMLFormatGenerator.SERVICE_PROVIDER_TYPE, ResourceXMLFormatGenerator.class);
         registry.put(ResourceYamlFormatGenerator.SERVICE_PROVIDER_TYPE, ResourceYamlFormatGenerator.class);
+        registry.put(ResourceJsonFormatGenerator.SERVICE_PROVIDER_TYPE, ResourceJsonFormatGenerator.class);
     }
 
     public String getName() {
@@ -61,7 +68,7 @@ public class ResourceFormatGeneratorService extends PluggableProviderRegistrySer
     }
 
     /**
-     * List the available format identifiers provided by all parsers
+     * @return the available format identifiers provided by all parsers
      */
     public List<String> listFormats() {
         final ArrayList<String> list = new ArrayList<String>();
@@ -118,7 +125,7 @@ public class ResourceFormatGeneratorService extends PluggableProviderRegistrySer
      *
      * @return the parser found for the format
      *
-     * @throws com.dtolabs.rundeck.core.execution.service.ExecutionServiceException
+     * @throws com.dtolabs.rundeck.core.resources.format.UnsupportedFormatException
      *          if no provider for the format exists
      */
     public ResourceFormatGenerator getGeneratorForFormat(final String format) throws UnsupportedFormatException {
@@ -175,8 +182,13 @@ public class ResourceFormatGeneratorService extends PluggableProviderRegistrySer
         return ResourceFormatGenerator.class.isAssignableFrom(clazz) && hasValidProviderSignature(clazz);
     }
 
-    public ResourceFormatGenerator createProviderInstance(Class<ResourceFormatGenerator> clazz, String name) throws
-        PluginException, ProviderCreationException {
+    @Override
+    public <X extends ResourceFormatGenerator> ResourceFormatGenerator createProviderInstance(
+            Class<X> clazz,
+            String name
+    )
+            throws PluginException, ProviderCreationException {
+
         return createProviderInstanceFromType(clazz, name);
     }
 

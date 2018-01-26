@@ -2,6 +2,10 @@
 
 #test result of /project/name metadata result
 
+# use api V10
+API_VERSION=10
+
+
 DIR=$(cd `dirname $0` && pwd)
 source $DIR/include.sh
 
@@ -19,7 +23,7 @@ if [ 0 != $? ] ; then
     exit 2
 fi
 
-sh $DIR/api-test-success.sh $DIR/curl.out || exit 2
+$SHELL $SRC_DIR/api-test-success.sh $DIR/curl.out || exit 2
 
 #Check projects list
 itemcount=$($XMLSTARLET sel -T -t -v "/result/projects/@count" $DIR/curl.out)
